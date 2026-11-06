@@ -34,25 +34,30 @@ export function ExecutiveOverview() {
       (c) => c.callDataStatus === 'INSUFFICIENT_CALL_DATA',
     ).length;
 
-    const dailyMap = new Map<string, number>();
-    for (const ix of filtered.interactions) {
-      const key = calendarDateKey(ix.interactionDate);
-      if (!key) continue;
-      dailyMap.set(key, (dailyMap.get(key) ?? 0) + 1);
-    }
-    const daily = [...dailyMap.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-30)
-      .map(([name, value]) => ({ name: name.slice(5), value }));
+    const series = snapshot.interactionSeries;
+    let daily = series?.daily ?? [];
+    let monthly = series?.monthly ?? [];
+    if (!series) {
+      const dailyMap = new Map<string, number>();
+      for (const ix of filtered.interactions) {
+        const key = calendarDateKey(ix.interactionDate);
+        if (!key) continue;
+        dailyMap.set(key, (dailyMap.get(key) ?? 0) + 1);
+      }
+      daily = [...dailyMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-30)
+        .map(([name, value]) => ({ name: name.slice(5), value }));
 
-    const monthlyMap = new Map<string, number>();
-    for (const key of dailyMap.keys()) {
-      const month = key.slice(0, 7);
-      monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + (dailyMap.get(key) ?? 0));
+      const monthlyMap = new Map<string, number>();
+      for (const key of dailyMap.keys()) {
+        const month = key.slice(0, 7);
+        monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + (dailyMap.get(key) ?? 0));
+      }
+      monthly = [...monthlyMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([name, value]) => ({ name, value }));
     }
-    const monthly = [...monthlyMap.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([name, value]) => ({ name, value }));
 
     const stageData = Object.entries(metrics.byStage).map(([name, value]) => ({
       name,

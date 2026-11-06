@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { calendarDateKey } from '@/lib/crm/dates';
 import { applyGlobalFilters } from '@/lib/crm/filters';
 import { ensureSeeded } from '@/lib/crm/seed';
-import type { CallRecord, CrmSnapshot, GlobalFilters } from '@/lib/crm/types';
+import type {
+  CallRecord,
+  CrmSnapshot,
+  GlobalFilters,
+  Interaction,
+} from '@/lib/crm/types';
 
 export const runtime = 'nodejs';
 /** Live Google Sheet sync on cold start can exceed default limits. */
@@ -30,27 +36,78 @@ function filterSnapshot(snapshot: CrmSnapshot, filters: GlobalFilters): CrmSnaps
   };
 }
 
+function buildInteractionSeries(
+  interactions: Interaction[],
+): { daily: Array<{ name: string; value: number }>; monthly: Array<{ name: string; value: number }> } {
+  const dailyMap = new Map<string, number>();
+  for (const ix of interactions) {
+    const key = calendarDateKey(ix.interactionDate);
+    if (!key) continue;
+    dailyMap.set(key, (dailyMap.get(key) ?? 0) + 1);
+  }
+  const daily = [...dailyMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-30)
+    .map(([name, value]) => ({ name: name.slice(5), value }));
+
+  const monthlyMap = new Map<string, number>();
+  for (const [key, value] of dailyMap) {
+    const month = key.slice(0, 7);
+    monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + value);
+  }
+  const monthly = [...monthlyMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, value]) => ({ name, value }));
+
+  return { daily, monthly };
+}
+
 /**
- * Full call arrays (~50k+) freeze the browser and hang JSON serialization.
- * Keep a small sample for today's activity; load per-customer calls via /api/crm/calls.
+ * Full call/interaction arrays (~50k+) hang JSON serialization on Vercel and
+ * freeze the browser. Keep recent samples; charts use pre-aggregated series.
  */
 function slimSnapshot(snapshot: CrmSnapshot): CrmSnapshot & {
   callTotal: number;
   callsTruncated: boolean;
+  interactionTotal: number;
+  interactionsTruncated: boolean;
+  interactionSeries: {
+    daily: Array<{ name: string; value: number }>;
+    monthly: Array<{ name: string; value: number }>;
+  };
 } {
   const CALL_CAP = 500;
-  const truncated = snapshot.calls.length > CALL_CAP;
-  const calls: CallRecord[] = truncated
+  const callsTruncated = snapshot.calls.length > CALL_CAP;
+  const calls: CallRecord[] = callsTruncated
     ? [...snapshot.calls]
         .sort((a, b) => b.callAt.localeCompare(a.callAt))
         .slice(0, CALL_CAP)
     : snapshot.calls;
 
+  const interactionSeries = buildInteractionSeries(snapshot.interactions);
+
+  // Keep only the latest interaction per sales process for payload size.
+  const latestByProcess = new Map<string, Interaction>();
+  for (const ix of snapshot.interactions) {
+    const key = ix.salesProcessId || ix.interactionId;
+    const prev = latestByProcess.get(key);
+    const ixAt = ix.interactionDate || '';
+    const prevAt = prev?.interactionDate || '';
+    if (!prev || ixAt >= prevAt) latestByProcess.set(key, ix);
+  }
+  const interactions = [...latestByProcess.values()];
+  const interactionsTruncated =
+    interactions.length < snapshot.interactions.length;
+
   return {
     ...snapshot,
     calls,
+    interactions,
     callTotal: snapshot.calls.length,
-    callsTruncated: truncated,
+    callsTruncated,
+    interactionTotal: snapshot.interactions.length,
+    interactionsTruncated,
+    interactionSeries,
   };
 }
 

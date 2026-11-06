@@ -306,4 +306,12 @@ export interface CrmSnapshot {
    */
   callTotal?: number;
   callsTruncated?: boolean;
+  /** Full interaction count when `interactions` is truncated for payload size. */
+  interactionTotal?: number;
+  interactionsTruncated?: boolean;
+  /** Pre-aggregated from the full interaction set before truncation. */
+  interactionSeries?: {
+    daily: Array<{ name: string; value: number }>;
+    monthly: Array<{ name: string; value: number }>;
+  };
 }
