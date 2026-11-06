@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { calendarDateKey, todayCalendarKey } from '@/lib/crm/dates';
 import { AllLeadsView } from './AllLeadsView';
 import { CategoryLeadView } from './CategoryLeadView';
 import { CustomerDrawer } from './CustomerDrawer';
@@ -122,6 +123,11 @@ export function DashboardShell() {
   const tabLabel = TAB_ITEMS.find((t) => t.id === activeTab)?.label ?? 'Dashboard';
   const lastSyncAt = snapshot?.syncMeta?.lastSyncAt;
   const syncSource = snapshot?.syncMeta?.source;
+  const latestDataAt = snapshot?.syncMeta?.latestDataAt ?? null;
+  const latestDataDay = latestDataAt ? calendarDateKey(latestDataAt) : null;
+  const todayKey = todayCalendarKey();
+  const sourceBehindToday =
+    Boolean(latestDataDay) && Boolean(todayKey) && latestDataDay! < todayKey;
 
   return (
     <div className="dash-shell">
@@ -142,6 +148,11 @@ export function DashboardShell() {
                   : `Built ${new Date(snapshot.builtAt).toLocaleString('en-IN', {
                       timeZone: 'Asia/Kolkata',
                     })}`}
+                {latestDataAt
+                  ? ` · Latest in sheet ${new Date(latestDataAt).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
+                    })}`
+                  : ''}
               </span>
             ) : null}
             <button
@@ -159,6 +170,21 @@ export function DashboardShell() {
         </header>
         <GlobalFiltersBar />
         <main className="dash-content">
+          {sourceBehindToday ? (
+            <div className="insufficient-banner" role="status">
+              <strong>Published sheet is behind</strong>
+              <span>
+                Google&apos;s published CSV still ends on{' '}
+                {new Date(latestDataAt!).toLocaleString('en-IN', {
+                  timeZone: 'Asia/Kolkata',
+                })}
+                . The dashboard is synced to that publish — new calls after that will appear only
+                after the sheet auto-republishes. In Google Sheets: File → Share → Publish to web →
+                enable &quot;Automatically republish when changes are made&quot;, or open Data Health
+                for details.
+              </span>
+            </div>
+          ) : null}
           {error ? (
             <div className="error-banner" role="alert">
               {error}

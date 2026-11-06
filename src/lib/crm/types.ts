@@ -235,6 +235,8 @@ export interface SyncMeta {
   message?: string;
   rowCount?: number;
   callCount?: number;
+  /** Newest call / interaction timestamp found in the synced source data. */
+  latestDataAt?: string | null;
 }
 
 export interface DataHealthIssue {

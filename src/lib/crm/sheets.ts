@@ -9,9 +9,12 @@
 
 import {
   PUBLISHED_SHEET_HTML_URL,
+  getPublishedCallsCsvUrl,
+  getPublishedCrmCsvUrl,
   getPublishedSheetCsvUrl,
   toPublishedCsvUrl,
 } from './dataset';
+import { parseFlexibleDate } from './dates';
 import { importFromCsv } from './import';
 import {
   deriveCrmRowsFromCallExport,
@@ -26,7 +29,7 @@ import {
   saveRawRows,
   saveSyncMeta,
 } from './store';
-import type { CrmSnapshot, SyncMeta } from './types';
+import type { CallRecord, CrmSnapshot, RawSheetRow, SyncMeta } from './types';
 
 export interface SheetsSyncResult {
   status: SyncMeta['status'] | 'pending_implementation';
@@ -34,8 +37,35 @@ export interface SheetsSyncResult {
   rowCount?: number;
   callCount?: number;
   syncedAt?: string;
+  latestDataAt?: string | null;
   snapshot?: CrmSnapshot;
   sourceUrl?: string;
+}
+
+function maxIsoTimestamp(values: Array<string | null | undefined>): string | null {
+  let bestMs = -Infinity;
+  let bestIso: string | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    const d = parseFlexibleDate(value);
+    if (!d) continue;
+    const ms = d.getTime();
+    if (ms > bestMs) {
+      bestMs = ms;
+      bestIso = d.toISOString();
+    }
+  }
+  return bestIso;
+}
+
+function latestFromCalls(calls: CallRecord[]): string | null {
+  return maxIsoTimestamp(calls.map((c) => c.callAt));
+}
+
+function latestFromRows(rows: RawSheetRow[]): string | null {
+  return maxIsoTimestamp(
+    rows.map((r) => r.interactionDate || r.nextFollowUp || null),
+  );
 }
 
 function readSheetsEnv(): {
@@ -124,27 +154,86 @@ export async function syncFromPublishedSheet(
 async function doSyncFromPublishedSheet(
   urlOverride?: string,
 ): Promise<SheetsSyncResult> {
-  const sourceUrl = toPublishedCsvUrl(urlOverride || getPublishedSheetCsvUrl());
   const syncedAt = new Date().toISOString();
 
   try {
+    // Default path: pull BOTH published tabs (calls + 35-col CRM).
+    if (!urlOverride) {
+      const [callsText, crmText] = await Promise.all([
+        fetchPublishedCsv(getPublishedCallsCsvUrl()),
+        fetchPublishedCsv(getPublishedCrmCsvUrl()),
+      ]);
+
+      const { calls, errors } = importCallsFromCsv(callsText);
+      await saveCalls(calls);
+      const callCount = calls.length;
+
+      let rowCount = 0;
+      let message = '';
+      const crmKind = detectDatasetKind(crmText);
+      if (crmKind === 'crm') {
+        const imported = importFromCsv(crmText);
+        await saveRawRows(imported.rows, 'google_sheets');
+        rowCount = imported.rows.length;
+        message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} CRM interaction rows from both published tabs.`;
+      } else {
+        const derived = deriveCrmRowsFromCallExport(callsText);
+        await saveRawRows(derived, 'google_sheets');
+        rowCount = derived.length;
+        message = `Synced ${callCount.toLocaleString()} calls; CRM tab unavailable so derived ${rowCount.toLocaleString()} customer rows from calls.`;
+      }
+
+      if (errors.length) {
+        message += ` ${errors.length} call parse warning(s).`;
+      }
+
+      const latestDataAt = maxIsoTimestamp([
+        latestFromCalls(calls),
+        latestFromRows(await loadRawRows()),
+      ]);
+
+      await saveSyncMeta({
+        ...(await loadSyncMeta()),
+        lastSyncAt: syncedAt,
+        lastImportAt: syncedAt,
+        source: 'google_sheets',
+        status: 'ok',
+        message: `${message} Source: ${PUBLISHED_SHEET_HTML_URL}`,
+        rowCount,
+        callCount,
+        latestDataAt,
+      });
+
+      return {
+        status: 'ok',
+        message,
+        rowCount,
+        callCount,
+        syncedAt,
+        latestDataAt,
+        sourceUrl: PUBLISHED_SHEET_HTML_URL,
+      };
+    }
+
+    const sourceUrl = toPublishedCsvUrl(urlOverride || getPublishedSheetCsvUrl());
     const csvText = await fetchPublishedCsv(sourceUrl);
     const kind = detectDatasetKind(csvText);
 
     let rowCount = 0;
     let callCount = 0;
     let message = '';
+    let latestDataAt: string | null = null;
 
     if (kind === 'calls') {
       const { calls, errors } = importCallsFromCsv(csvText);
       await saveCalls(calls);
       callCount = calls.length;
 
-      // Published call workbook is the configured dataset: derive CRM customers from it.
       const derived = deriveCrmRowsFromCallExport(csvText);
       await saveRawRows(derived, 'google_sheets');
       rowCount = derived.length;
       message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} customer rows from published call sheet.`;
+      latestDataAt = latestFromCalls(calls);
 
       if (errors.length) {
         message += ` ${errors.length} call parse warning(s).`;
@@ -155,8 +244,11 @@ async function doSyncFromPublishedSheet(
       rowCount = imported.rows.length;
       callCount = (await loadCalls()).length;
       message = `Synced ${rowCount.toLocaleString()} CRM rows from published sheet.`;
+      latestDataAt = maxIsoTimestamp([
+        latestFromRows(imported.rows),
+        latestFromCalls(await loadCalls()),
+      ]);
     } else {
-      // Attempt both: prefer calls mapping if Call Id-like columns appear after parse
       const { calls } = importCallsFromCsv(csvText);
       if (calls.length > 0 && calls.some((c) => c.callRecordId && !c.callRecordId.startsWith('CALL-IMPORT-'))) {
         await saveCalls(calls);
@@ -170,12 +262,14 @@ async function doSyncFromPublishedSheet(
           rowCount = existingRows.length;
         }
         message = `Synced published sheet as call export (${callCount.toLocaleString()} calls).`;
+        latestDataAt = latestFromCalls(calls);
       } else {
         const imported = importFromCsv(csvText);
         await saveRawRows(imported.rows, 'google_sheets');
         rowCount = imported.rows.length;
         callCount = (await loadCalls()).length;
         message = `Synced published sheet as CRM export (${rowCount.toLocaleString()} rows).`;
+        latestDataAt = latestFromRows(imported.rows);
       }
     }
 
@@ -188,16 +282,16 @@ async function doSyncFromPublishedSheet(
       message: `${message} Source: ${PUBLISHED_SHEET_HTML_URL}`,
       rowCount,
       callCount,
+      latestDataAt,
     });
 
-    // Avoid building/serializing a huge snapshot in the sync response —
-    // client refreshes via GET /api/crm/snapshot after sync completes.
     return {
       status: 'ok',
       message,
       rowCount,
       callCount,
       syncedAt,
+      latestDataAt,
       sourceUrl: PUBLISHED_SHEET_HTML_URL,
     };
   } catch (err) {

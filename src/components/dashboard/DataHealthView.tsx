@@ -127,7 +127,7 @@ export function DataHealthView() {
         <section className="dash-card">
           <h2 className="section-title">Published Google Sheet</h2>
           <p className="cell-muted" style={{ marginBottom: '0.75rem' }}>
-            Live dataset:{' '}
+            Live dataset (calls + CRM tabs):{' '}
             <a
               href="https://docs.google.com/spreadsheets/d/e/2PACX-1vQS0n24NGhCYCBE7bHdGScggtbPVyui4iHpfcuNq9-RYtw3AZXjnS8SjXUM01E4n_giJDJb6CFd4yNW/pubhtml"
               target="_blank"
@@ -136,6 +136,9 @@ export function DataHealthView() {
             >
               Open published sheet
             </a>
+            . If today&apos;s leads are missing, republish in Google Sheets (File → Share → Publish
+            to web) and turn on automatic republish — the CRM can only show what that published
+            CSV contains.
           </p>
           <dl className="kv-grid">
             <div>
@@ -153,6 +156,10 @@ export function DataHealthView() {
             <div>
               <dt>Last Sheets sync</dt>
               <dd>{formatDate(sync?.lastSyncAt)}</dd>
+            </div>
+            <div>
+              <dt>Newest row in sheet</dt>
+              <dd>{formatDate(sync?.latestDataAt)}</dd>
             </div>
             <div>
               <dt>Rows</dt>
