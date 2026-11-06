@@ -66,7 +66,9 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
   loadSnapshot: async () => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch('/api/crm/snapshot');
+      const res = await fetch(`/api/crm/snapshot?t=${Date.now()}`, {
+        cache: 'no-store',
+      });
       const data = await parseJson(res);
       set({ snapshot: data.snapshot as CrmSnapshot, loading: false });
     } catch (err) {
@@ -129,7 +131,8 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       const res = await fetch('/api/crm/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'published' }),
+        cache: 'no-store',
+        body: JSON.stringify({ mode: 'published', force: true }),
       });
       const data = await parseJson(res);
       // Sync no longer embeds the full snapshot (too large). Always reload.

@@ -95,18 +95,56 @@ function ActiveView() {
   }
 }
 
+const CLIENT_STALE_MS = 2 * 60 * 1000;
+
+function needsFreshSheetSync(snapshot: {
+  syncMeta?: {
+    source?: string;
+    lastSyncAt?: string | null;
+    message?: string | null;
+  };
+} | null): boolean {
+  if (!snapshot?.syncMeta) return true;
+  const meta = snapshot.syncMeta;
+  const synthetic =
+    meta.source === 'csv' &&
+    (meta.message || '').toLowerCase().includes('synthetic');
+  if (synthetic || meta.source !== 'google_sheets') return true;
+  if (!meta.lastSyncAt) return true;
+  const age = Date.now() - new Date(meta.lastSyncAt).getTime();
+  return !Number.isFinite(age) || age > CLIENT_STALE_MS;
+}
+
 export function DashboardShell() {
   const loadSnapshot = useCrmStore((s) => s.loadSnapshot);
+  const syncSheets = useCrmStore((s) => s.syncSheets);
   const loading = useCrmStore((s) => s.loading);
   const error = useCrmStore((s) => s.error);
   const snapshot = useCrmStore((s) => s.snapshot);
   const activeTab = useCrmStore((s) => s.activeTab);
 
   useEffect(() => {
-    void loadSnapshot();
-  }, [loadSnapshot]);
+    let cancelled = false;
+    (async () => {
+      await loadSnapshot();
+      if (cancelled) return;
+      const current = useCrmStore.getState().snapshot;
+      if (needsFreshSheetSync(current)) {
+        try {
+          await syncSheets();
+        } catch {
+          // Snapshot (even if stale) remains visible; error banner shows sync failure.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadSnapshot, syncSheets]);
 
   const tabLabel = TAB_ITEMS.find((t) => t.id === activeTab)?.label ?? 'Dashboard';
+  const lastSyncAt = snapshot?.syncMeta?.lastSyncAt;
+  const syncSource = snapshot?.syncMeta?.source;
 
   return (
     <div className="dash-shell">
@@ -120,11 +158,25 @@ export function DashboardShell() {
           <div className="topbar-meta">
             {snapshot ? (
               <span>
-                Built {new Date(snapshot.builtAt).toLocaleString('en-IN', {
-                  timeZone: 'Asia/Kolkata',
-                })}
+                {syncSource === 'google_sheets' && lastSyncAt
+                  ? `Sheet synced ${new Date(lastSyncAt).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
+                    })}`
+                  : `Built ${new Date(snapshot.builtAt).toLocaleString('en-IN', {
+                      timeZone: 'Asia/Kolkata',
+                    })}`}
               </span>
             ) : null}
+            <button
+              type="button"
+              className="btn-ghost"
+              disabled={loading}
+              onClick={() => {
+                void syncSheets().catch(() => undefined);
+              }}
+            >
+              Refresh sheet
+            </button>
             {loading ? <span className="topbar-loading">Loading…</span> : null}
           </div>
         </header>

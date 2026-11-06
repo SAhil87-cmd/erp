@@ -106,14 +106,31 @@ export async function seedFromPublishedSheet(): Promise<SeedResult | null> {
   }
 }
 
+function isSyntheticMeta(meta: { source?: string; message?: string | null }): boolean {
+  return (
+    meta.source === 'csv' &&
+    (meta.message || '').toLowerCase().includes('synthetic')
+  );
+}
+
 /**
  * Ensure the store has data for first dashboard load.
- * Vercel → published Google Sheet first (live data).
+ * Vercel → published Google Sheet first (live data). Freshness refreshes happen via
+ * POST /api/crm/sync (dashboard auto-sync + Refresh sheet), not on every snapshot GET.
  * Local → synthetic CSV first (fast), then published sheet.
  */
 export async function ensureSeeded(force = false): Promise<SeedResult> {
   const existing = await loadRawRows();
-  if (!force && existing.length > 0) {
+  const meta = await loadSyncMeta();
+
+  // On Vercel, never keep synthetic demo data — always upgrade to published sheet.
+  const needsLiveUpgrade =
+    IS_VERCEL &&
+    (existing.length === 0 ||
+      isSyntheticMeta(meta) ||
+      meta.source !== 'google_sheets');
+
+  if (!force && existing.length > 0 && !needsLiveUpgrade) {
     const snapshot = await loadSnapshot();
     return {
       seeded: false,
@@ -127,7 +144,31 @@ export async function ensureSeeded(force = false): Promise<SeedResult> {
   if (IS_VERCEL) {
     const fromSheet = await seedFromPublishedSheet();
     if (fromSheet) return fromSheet;
-    // Fall through to synthetic if sheet sync fails
+    // Prefer any previously loaded live data over empty/error when sheet is briefly down.
+    if (existing.length > 0 && !isSyntheticMeta(meta)) {
+      const snapshot = await loadSnapshot();
+      return {
+        seeded: false,
+        rowCount: existing.length,
+        callCount: snapshot.calls.length,
+        message: 'Using last synced sheet data (live refresh failed)',
+        snapshot,
+      };
+    }
+    // Do NOT fall back to synthetic on Vercel — return empty with clear error.
+    const snapshot = await loadSnapshot();
+    const errMeta = await loadSyncMeta();
+    errMeta.status = 'error';
+    errMeta.message =
+      'Could not sync the published Google Sheet. Open Data Health and click Sync, or retry in a minute.';
+    await saveSyncMeta(errMeta);
+    return {
+      seeded: false,
+      rowCount: 0,
+      callCount: 0,
+      message: errMeta.message,
+      snapshot: { ...snapshot, syncMeta: errMeta },
+    };
   }
 
   const hasSynthetic =
@@ -137,23 +178,21 @@ export async function ensureSeeded(force = false): Promise<SeedResult> {
     return seedFromSynthetic();
   }
 
-  if (!IS_VERCEL) {
-    const fromSheet = await seedFromPublishedSheet();
-    if (fromSheet) return fromSheet;
-  }
+  const fromSheet = await seedFromPublishedSheet();
+  if (fromSheet) return fromSheet;
 
   const snapshot = await loadSnapshot();
-  const meta = await loadSyncMeta();
-  meta.status = 'error';
-  meta.message =
+  const errMeta = await loadSyncMeta();
+  errMeta.status = 'error';
+  errMeta.message =
     'No seed data available. Sync the published Google Sheet from Data Health, or ensure data/synthetic CSVs are deployed.';
-  await saveSyncMeta(meta);
+  await saveSyncMeta(errMeta);
 
   return {
     seeded: false,
     rowCount: 0,
     callCount: 0,
-    message: meta.message,
-    snapshot: { ...snapshot, syncMeta: meta },
+    message: errMeta.message,
+    snapshot: { ...snapshot, syncMeta: errMeta },
   };
 }

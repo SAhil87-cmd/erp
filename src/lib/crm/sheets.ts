@@ -74,10 +74,16 @@ function detectDatasetKind(csvText: string): 'calls' | 'crm' | 'unknown' {
 }
 
 async function fetchPublishedCsv(url: string): Promise<string> {
-  const res = await fetch(url, {
+  // Bust CDN / browser / Google intermediate caches so sync gets the latest publish.
+  const bust = `t=${Date.now()}`;
+  const fetchUrl = url.includes('?') ? `${url}&${bust}` : `${url}?${bust}`;
+  const res = await fetch(fetchUrl, {
     cache: 'no-store',
+    next: { revalidate: 0 },
     headers: {
       Accept: 'text/csv,text/plain,*/*',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache',
       'User-Agent': 'YashodhanSalesIntelligence/1.0',
     },
   });
@@ -91,11 +97,31 @@ async function fetchPublishedCsv(url: string): Promise<string> {
   return text;
 }
 
+/** Deduplicate concurrent published-sheet syncs on the same serverless instance. */
+let inFlightPublishedSync: Promise<SheetsSyncResult> | null = null;
+
 /**
  * Sync from the configured published Google Sheet CSV URL.
  * Detects call-history vs CRM 35-column formats automatically.
  */
 export async function syncFromPublishedSheet(
+  urlOverride?: string,
+): Promise<SheetsSyncResult> {
+  if (inFlightPublishedSync && !urlOverride) {
+    return inFlightPublishedSync;
+  }
+
+  const run = doSyncFromPublishedSheet(urlOverride);
+  if (!urlOverride) {
+    inFlightPublishedSync = run.finally(() => {
+      inFlightPublishedSync = null;
+    });
+    return inFlightPublishedSync;
+  }
+  return run;
+}
+
+async function doSyncFromPublishedSheet(
   urlOverride?: string,
 ): Promise<SheetsSyncResult> {
   const sourceUrl = toPublishedCsvUrl(urlOverride || getPublishedSheetCsvUrl());
