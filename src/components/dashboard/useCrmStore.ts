@@ -47,7 +47,15 @@ interface CrmStoreState {
   }) => Promise<void>;
 }
 
-async function parseJson(res: Response) {
+type ApiJson = {
+  ok?: boolean;
+  error?: string;
+  snapshot?: unknown;
+  result?: { message?: string; [key: string]: unknown };
+  [key: string]: unknown;
+};
+
+async function parseJson(res: Response): Promise<ApiJson> {
   const contentType = res.headers.get('content-type') || '';
   const text = await res.text();
   const looksHtml =
@@ -63,9 +71,9 @@ async function parseJson(res: Response) {
     );
   }
 
-  let data: { ok?: boolean; error?: string; [key: string]: unknown };
+  let data: ApiJson;
   try {
-    data = JSON.parse(text) as { ok?: boolean; error?: string };
+    data = JSON.parse(text) as ApiJson;
   } catch {
     throw new Error(
       `Invalid server response (${res.status}). ${text.slice(0, 120) || 'Empty body'}`,
