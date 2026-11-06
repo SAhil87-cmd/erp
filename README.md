@@ -2,6 +2,7 @@
 
 CRM sales intelligence for **Yashodhan Group**: classify pipeline risk and intent from sheet rows + call history, then action leads from a dense enterprise dashboard.
 
+Repo: https://github.com/SAhil87-cmd/erp  
 Project path: `D:\Projects\asa-scaliq-leads`
 
 ## Features
@@ -27,12 +28,12 @@ On first snapshot load (empty `data/crm/raw_rows.json`), the API auto-seeds synt
 
 ## Vercel deploy
 
-Local `npm run build` succeeds. The App Router lives in **`src/app`** (not a root `app/` folder).
+Local `npm run build` succeeds. The App Router lives in the root **`app/`** folder (components/lib stay under `src/`).
 
 If Vercel fails with `Couldn't find any 'pages' or 'app' directory`:
 
-1. Ensure this full repo (including `src/app`) is what Vercel builds — push `main` to the linked GitHub repo.
-2. In Vercel → Project → Settings → General → **Root Directory**: leave **empty** (project root). Do not set it to a subfolder that lacks `src/app`.
+1. Import/redeploy from https://github.com/SAhil87-cmd/erp (this repo).
+2. In Vercel → Project → Settings → General → **Root Directory**: leave **empty**.
 3. Framework Preset: **Next.js**. `vercel.json` is already in the repo.
 
 CRM writes on Vercel use `/tmp` (read-only app filesystem). Re-sync after cold starts if needed.
