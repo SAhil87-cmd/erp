@@ -1,0 +1,64 @@
+customerId,callRecordId,callDate,callTime,callOutcome,answered,durationSeconds,callExecutive,salesProcessId,salesProcessName
+CUST-GD-001,CALL-GD-001-A,06/01/2026,10:00,answered,yes,120,Ram B,,Primary Sales
+CUST-GD-001,CALL-GD-001-B,20/01/2026,11:00,unanswered,no,0,Ram B,,Primary Sales
+CUST-GD-001,CALL-GD-001-C,22/01/2026,11:30,unanswered,no,0,Ram B,,Primary Sales
+CUST-GD-001,CALL-GD-001-D,22/01/2026,16:00,unanswered,no,0,Shubham,,Primary Sales
+CUST-GD-002,CALL-GD-002-A,09/01/2026,09:00,answered,yes,200,Priya K,,Primary Sales
+CUST-GD-002,CALL-GD-002-B,25/01/2026,10:00,unanswered,no,0,Priya K,,Primary Sales
+CUST-GD-002,CALL-GD-002-C,27/01/2026,10:00,unanswered,no,0,Priya K,,Primary Sales
+CUST-GD-003,CALL-GD-003-A,11/01/2026,12:00,answered,yes,180,Amit S,,Primary Sales
+CUST-GD-003,CALL-GD-003-B,20/01/2026,12:00,unanswered,no,0,Amit S,,Primary Sales
+CUST-GD-003,CALL-GD-003-C,21/01/2026,12:00,unanswered,no,0,Amit S,,Primary Sales
+CUST-NPU-001,CALL-NPU-001-A,11/01/2026,09:00,unanswered,no,0,Shubham,,Primary Sales
+CUST-NPU-001,CALL-NPU-001-B,11/01/2026,15:00,unanswered,no,0,Shubham,,Primary Sales
+CUST-NPU-001,CALL-NPU-001-C,13/01/2026,10:00,unanswered,no,0,Shubham,,Primary Sales
+CUST-NPU-001,CALL-NPU-001-D,15/01/2026,10:00,unanswered,no,0,Shubham,,Primary Sales
+CUST-NPU-002,CALL-NPU-002-A,12/01/2026,09:00,unanswered,no,0,Ram B,,Primary Sales
+CUST-NPU-002,CALL-NPU-002-B,14/01/2026,09:00,unanswered,no,0,Ram B,,Primary Sales
+CUST-NPU-002,CALL-NPU-002-C,16/01/2026,09:00,unanswered,no,0,Ram B,,Primary Sales
+CUST-NPU-003,CALL-NPU-003-A,13/01/2026,11:00,unanswered,no,0,Priya K,,Primary Sales
+CUST-NPU-003,CALL-NPU-003-B,14/01/2026,11:00,unanswered,no,0,Priya K,,Primary Sales
+CUST-NPU-003,CALL-NPU-003-C,15/01/2026,11:00,unanswered,no,0,Priya K,,Primary Sales
+CUST-NPU-004,CALL-NPU-004-A,14/01/2026,10:00,unanswered,no,0,Amit S,,Primary Sales
+CUST-NPU-004,CALL-NPU-004-B,15/01/2026,10:00,unanswered,no,0,Amit S,,Primary Sales
+CUST-NPU-004,CALL-NPU-004-C,16/01/2026,10:00,unanswered,no,0,Amit S,,Primary Sales
+CUST-MNI-001,CALL-MNI-001-A,08/01/2026,14:00,answered,yes,15,Shubham,,Primary Sales
+CUST-MNI-001,CALL-MNI-001-B,09/01/2026,14:00,answered,yes,20,Shubham,,Primary Sales
+CUST-MNI-002,CALL-MNI-002-A,09/01/2026,10:00,unanswered,no,0,Ram B,,Primary Sales
+CUST-MNI-002,CALL-MNI-002-B,10/01/2026,10:00,unanswered,no,0,Ram B,,Primary Sales
+CUST-MNI-003,CALL-MNI-003-A,12/01/2026,11:00,answered,yes,180,Priya K,,Primary Sales
+CUST-MNI-003,CALL-MNI-003-B,13/01/2026,11:00,answered,yes,240,Priya K,,Primary Sales
+CUST-STK-001,CALL-STK-001-A,06/01/2026,10:00,answered,yes,90,Amit S,,Primary Sales
+CUST-STK-001,CALL-STK-001-B,08/01/2026,10:00,answered,yes,100,Amit S,,Primary Sales
+CUST-STK-001,CALL-STK-001-C,10/01/2026,10:00,answered,yes,110,Amit S,,Primary Sales
+CUST-STK-002,CALL-STK-002-A,07/01/2026,09:00,answered,yes,80,Priya K,,Primary Sales
+CUST-STK-002,CALL-STK-002-B,09/01/2026,09:00,answered,yes,85,Priya K,,Primary Sales
+CUST-STK-002,CALL-STK-002-C,11/01/2026,09:00,answered,yes,90,Priya K,,Primary Sales
+CUST-STK-003,CALL-STK-003-A,08/01/2026,10:00,answered,yes,100,Shubham,,Primary Sales
+CUST-STK-003,CALL-STK-003-B,10/01/2026,10:00,answered,yes,120,Shubham,,Primary Sales
+CUST-STK-003,CALL-STK-003-C,12/01/2026,10:00,answered,yes,130,Shubham,,Primary Sales
+CUST-STK-004,CALL-STK-004-A,09/01/2026,11:00,answered,yes,140,Ram B,,Primary Sales
+CUST-STK-004,CALL-STK-004-B,11/01/2026,11:00,answered,yes,150,Ram B,,Primary Sales
+CUST-STK-004,CALL-STK-004-C,13/01/2026,11:00,answered,yes,160,Ram B,,Primary Sales
+CUST-STK-005,CALL-STK-005-A,10/01/2026,09:00,answered,yes,70,Amit S,,Primary Sales
+CUST-STK-005,CALL-STK-005-B,12/01/2026,09:00,answered,yes,75,Amit S,,Primary Sales
+CUST-STK-005,CALL-STK-005-C,14/01/2026,09:00,answered,yes,80,Amit S,,Primary Sales
+CUST-STK-006,CALL-STK-006-A,11/01/2026,10:00,answered,yes,60,Priya K,,Primary Sales
+CUST-STK-006,CALL-STK-006-B,13/01/2026,10:00,answered,yes,65,Priya K,,Primary Sales
+CUST-STK-006,CALL-STK-006-C,15/01/2026,10:00,answered,yes,70,Priya K,,Primary Sales
+CUST-STK-007,CALL-STK-007-A,12/01/2026,11:00,answered,yes,55,Shubham,,Primary Sales
+CUST-STK-007,CALL-STK-007-B,14/01/2026,11:00,answered,yes,60,Shubham,,Primary Sales
+CUST-STK-007,CALL-STK-007-C,16/01/2026,11:00,answered,yes,65,Shubham,,Primary Sales
+CUST-VHI-001,CALL-VHI-001-A,21/01/2026,10:00,answered,yes,200,Ram B,,Primary Sales
+CUST-VHI-001,CALL-VHI-001-B,23/01/2026,10:00,answered,yes,220,Ram B,,Primary Sales
+CUST-HI-001,CALL-HI-001-A,23/01/2026,11:00,answered,yes,180,Priya K,,Primary Sales
+CUST-HI-001,CALL-HI-001-B,25/01/2026,11:00,answered,yes,190,Priya K,,Primary Sales
+CUST-CLOSED-001,CALL-CLOSED-001-A,10/01/2026,10:00,answered,yes,300,Amit S,,Primary Sales
+CUST-CLOSED-001,CALL-CLOSED-001-B,12/01/2026,10:00,answered,yes,280,Amit S,,Primary Sales
+CUST-NI-GEN-001,CALL-NI-GEN-001-A,14/01/2026,09:00,answered,yes,150,Shubham,,Primary Sales
+CUST-NORMAL-001,CALL-NORMAL-001-A,26/01/2026,10:00,answered,yes,90,Amit S,,Primary Sales
+CUST-SVS-001,CALL-SVS-001-A,28/01/2026,10:00,answered,yes,100,Shubham,,Primary Sales
+CUST-SVS-001,CALL-SVS-001-B,30/01/2026,10:00,answered,yes,110,Shubham,,Primary Sales
+CUST-MULTI-001,CALL-MULTI-001-A,20/01/2026,10:00,answered,yes,80,Ram B,,Primary Sales
+CUST-MULTI-001,CALL-MULTI-001-B,22/01/2026,11:00,answered,yes,90,Priya K,,Secondary Sales
+CUST-MULTI-001,CALL-MULTI-001-C,24/01/2026,11:00,answered,yes,95,Priya K,,Secondary Sales

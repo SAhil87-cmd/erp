@@ -1,0 +1,9 @@
+# Keep deploy payload small; CRM data is synced/seeded at runtime
+data/crm/*.json
+data/crm/*.csv
+data/synthetic/
+scripts/
+.next/
+node_modules/
+coverage/
+*.md
