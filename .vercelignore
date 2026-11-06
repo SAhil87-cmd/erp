@@ -1,7 +1,6 @@
-# Keep deploy payload small; CRM data is synced/seeded at runtime
+# Keep deploy payload small; seed CSVs in data/synthetic MUST ship with the app
 data/crm/*.json
 data/crm/*.csv
-data/synthetic/
 scripts/
 .next/
 node_modules/
