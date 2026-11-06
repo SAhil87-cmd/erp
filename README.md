@@ -25,6 +25,18 @@ Open [http://localhost:3000](http://localhost:3000) — redirects to `/dashboard
 
 On first snapshot load (empty `data/crm/raw_rows.json`), the API auto-seeds synthetic CRM + call CSVs.
 
+## Vercel deploy
+
+Local `npm run build` succeeds. The App Router lives in **`src/app`** (not a root `app/` folder).
+
+If Vercel fails with `Couldn't find any 'pages' or 'app' directory`:
+
+1. Ensure this full repo (including `src/app`) is what Vercel builds — push `main` to the linked GitHub repo.
+2. In Vercel → Project → Settings → General → **Root Directory**: leave **empty** (project root). Do not set it to a subfolder that lacks `src/app`.
+3. Framework Preset: **Next.js**. `vercel.json` is already in the repo.
+
+CRM writes on Vercel use `/tmp` (read-only app filesystem). Re-sync after cold starts if needed.
+
 ## Seed / import
 
 - **Auto-seed**: `GET /api/crm/snapshot` when store is empty
