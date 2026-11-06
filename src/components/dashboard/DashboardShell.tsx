@@ -95,26 +95,6 @@ function ActiveView() {
   }
 }
 
-const CLIENT_STALE_MS = 2 * 60 * 1000;
-
-function needsFreshSheetSync(snapshot: {
-  syncMeta?: {
-    source?: string;
-    lastSyncAt?: string | null;
-    message?: string | null;
-  };
-} | null): boolean {
-  if (!snapshot?.syncMeta) return true;
-  const meta = snapshot.syncMeta;
-  const synthetic =
-    meta.source === 'csv' &&
-    (meta.message || '').toLowerCase().includes('synthetic');
-  if (synthetic || meta.source !== 'google_sheets') return true;
-  if (!meta.lastSyncAt) return true;
-  const age = Date.now() - new Date(meta.lastSyncAt).getTime();
-  return !Number.isFinite(age) || age > CLIENT_STALE_MS;
-}
-
 export function DashboardShell() {
   const loadSnapshot = useCrmStore((s) => s.loadSnapshot);
   const syncSheets = useCrmStore((s) => s.syncSheets);
@@ -126,15 +106,13 @@ export function DashboardShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Show whatever this instance already has, then always re-pull the published sheet.
       await loadSnapshot();
       if (cancelled) return;
-      const current = useCrmStore.getState().snapshot;
-      if (needsFreshSheetSync(current)) {
-        try {
-          await syncSheets();
-        } catch {
-          // Snapshot (even if stale) remains visible; error banner shows sync failure.
-        }
+      try {
+        await syncSheets();
+      } catch {
+        // Snapshot (even if stale) remains visible; error banner shows sync failure.
       }
     })();
     return () => {
