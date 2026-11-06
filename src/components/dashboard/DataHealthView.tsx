@@ -127,7 +127,7 @@ export function DataHealthView() {
         <section className="dash-card">
           <h2 className="section-title">Published Google Sheet</h2>
           <p className="cell-muted" style={{ marginBottom: '0.75rem' }}>
-            Live dataset (calls + CRM tabs):{' '}
+            Live dataset (published call history tab):{' '}
             <a
               href="https://docs.google.com/spreadsheets/d/e/2PACX-1vQS0n24NGhCYCBE7bHdGScggtbPVyui4iHpfcuNq9-RYtw3AZXjnS8SjXUM01E4n_giJDJb6CFd4yNW/pubhtml"
               target="_blank"

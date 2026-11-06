@@ -48,7 +48,30 @@ interface CrmStoreState {
 }
 
 async function parseJson(res: Response) {
-  const data = await res.json();
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+  const looksHtml =
+    contentType.includes('text/html') ||
+    text.trimStart().startsWith('<!DOCTYPE') ||
+    text.trimStart().startsWith('<html');
+
+  if (looksHtml) {
+    throw new Error(
+      res.status === 504 || res.status === 408
+        ? 'Server timed out while loading sheet data. Click Retry in a moment.'
+        : `Server returned an error page (${res.status || 'unknown'}). Click Retry — first sync can take up to a minute.`,
+    );
+  }
+
+  let data: { ok?: boolean; error?: string; [key: string]: unknown };
+  try {
+    data = JSON.parse(text) as { ok?: boolean; error?: string };
+  } catch {
+    throw new Error(
+      `Invalid server response (${res.status}). ${text.slice(0, 120) || 'Empty body'}`,
+    );
+  }
+
   if (!res.ok || data.ok === false) {
     throw new Error(data.error || `Request failed (${res.status})`);
   }

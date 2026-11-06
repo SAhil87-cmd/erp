@@ -107,12 +107,18 @@ export function DashboardShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Always pull the published sheet first so this serverless instance gets the
-      // newest rows (in-memory store is not shared across Vercel instances).
+      // Prefer a live sheet sync, but always fall back to snapshot so a timeout
+      // does not leave a blank page.
       try {
         await syncSheets();
       } catch {
-        if (!cancelled) await loadSnapshot();
+        if (!cancelled) {
+          try {
+            await loadSnapshot();
+          } catch {
+            // error banner already set by store helpers
+          }
+        }
       }
     })();
     return () => {

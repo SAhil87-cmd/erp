@@ -10,7 +10,6 @@
 import {
   PUBLISHED_SHEET_HTML_URL,
   getPublishedCallsCsvUrl,
-  getPublishedCrmCsvUrl,
   getPublishedSheetCsvUrl,
   toPublishedCsvUrl,
 } from './dataset';
@@ -157,40 +156,23 @@ async function doSyncFromPublishedSheet(
   const syncedAt = new Date().toISOString();
 
   try {
-    // Default path: pull BOTH published tabs (calls + 35-col CRM).
+    // Default path: calls tab only. Importing the full 47k-row CRM tab OOMs / times
+    // out on Vercel serverless — derive customers from the call export instead.
     if (!urlOverride) {
-      const [callsText, crmText] = await Promise.all([
-        fetchPublishedCsv(getPublishedCallsCsvUrl()),
-        fetchPublishedCsv(getPublishedCrmCsvUrl()),
-      ]);
-
+      const callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
       const { calls, errors } = importCallsFromCsv(callsText);
       await saveCalls(calls);
       const callCount = calls.length;
 
-      let rowCount = 0;
-      let message = '';
-      const crmKind = detectDatasetKind(crmText);
-      if (crmKind === 'crm') {
-        const imported = importFromCsv(crmText);
-        await saveRawRows(imported.rows, 'google_sheets');
-        rowCount = imported.rows.length;
-        message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} CRM interaction rows from both published tabs.`;
-      } else {
-        const derived = deriveCrmRowsFromCallExport(callsText);
-        await saveRawRows(derived, 'google_sheets');
-        rowCount = derived.length;
-        message = `Synced ${callCount.toLocaleString()} calls; CRM tab unavailable so derived ${rowCount.toLocaleString()} customer rows from calls.`;
-      }
-
+      const derived = deriveCrmRowsFromCallExport(callsText);
+      await saveRawRows(derived, 'google_sheets');
+      const rowCount = derived.length;
+      let message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} customer rows from published call sheet.`;
       if (errors.length) {
         message += ` ${errors.length} call parse warning(s).`;
       }
 
-      const latestDataAt = maxIsoTimestamp([
-        latestFromCalls(calls),
-        latestFromRows(await loadRawRows()),
-      ]);
+      const latestDataAt = latestFromCalls(calls);
 
       await saveSyncMeta({
         ...(await loadSyncMeta()),
