@@ -64,9 +64,9 @@ export function DataHealthView() {
       <InsufficientCallDataBanner
         count={insufficient}
         callTotal={
-          (snapshot as { callTotal?: number } | null)?.callTotal ??
-          snapshot?.calls.length ??
-          snapshot?.syncMeta.callCount
+          snapshot?.callTotal ??
+          snapshot?.syncMeta.callCount ??
+          snapshot?.calls.length
         }
       />
 

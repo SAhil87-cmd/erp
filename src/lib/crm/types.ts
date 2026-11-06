@@ -298,4 +298,10 @@ export interface CrmSnapshot {
   dataHealth: DataHealthReport;
   syncMeta: SyncMeta;
   builtAt: string;
+  /**
+   * Full call count when `calls` is truncated for API payload size.
+   * Prefer this (or syncMeta.callCount) over calls.length for KPIs.
+   */
+  callTotal?: number;
+  callsTruncated?: boolean;
 }

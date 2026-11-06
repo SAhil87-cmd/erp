@@ -182,16 +182,20 @@ export function ExecutiveOverview() {
             value: derived.hot,
             tone: 'opportunity',
           },
-          { label: 'Calls linked', value: metrics.totalCalls },
+          {
+            label: 'Calls linked',
+            value: metrics.totalCalls,
+            hint:
+              snapshot?.callsTruncated
+                ? `Full sheet total (${metrics.totalCalls.toLocaleString()}); list preview capped for speed`
+                : undefined,
+          },
         ]}
       />
 
       <InsufficientCallDataBanner
         count={derived.insufficient}
-        callTotal={
-          (snapshot as { callTotal?: number } | null)?.callTotal ??
-          metrics.totalCalls
-        }
+        callTotal={snapshot?.callTotal ?? metrics.totalCalls}
       />
 
       <div className="chart-grid">

@@ -43,7 +43,7 @@ export function AllLeadsView() {
       <InsufficientCallDataBanner
         count={insufficient}
         callTotal={
-          (snapshot as { callTotal?: number } | null)?.callTotal ??
+          snapshot?.callTotal ??
           snapshot?.syncMeta.callCount ??
           snapshot?.calls.length
         }

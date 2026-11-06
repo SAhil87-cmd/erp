@@ -125,11 +125,16 @@ export function computeOverviewMetrics(snapshot: CrmSnapshot): OverviewMetrics {
   const conversionRate =
     conversionDenominator === 0 ? 0 : conversionNumerator / conversionDenominator;
 
+  const totalCalls =
+    snapshot.callTotal ??
+    snapshot.syncMeta.callCount ??
+    snapshot.calls.length;
+
   return {
     totalCustomers: snapshot.customers.length,
     totalProcesses: snapshot.processes.length,
     totalInteractions: snapshot.interactions.length,
-    totalCalls: snapshot.calls.length,
+    totalCalls,
     byStage,
     byCategory: countByCategory(snapshot.classifications),
     salesClosed,

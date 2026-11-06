@@ -79,7 +79,7 @@ export function CategoryLeadView({
       <InsufficientCallDataBanner
         count={insufficientCount}
         callTotal={
-          (snapshot as { callTotal?: number } | null)?.callTotal ??
+          snapshot?.callTotal ??
           snapshot?.syncMeta.callCount ??
           snapshot?.calls.length
         }
