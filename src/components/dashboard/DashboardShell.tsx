@@ -106,13 +106,12 @@ export function DashboardShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Show whatever this instance already has, then always re-pull the published sheet.
-      await loadSnapshot();
-      if (cancelled) return;
+      // Always pull the published sheet first so this serverless instance gets the
+      // newest rows (in-memory store is not shared across Vercel instances).
       try {
         await syncSheets();
       } catch {
-        // Snapshot (even if stale) remains visible; error banner shows sync failure.
+        if (!cancelled) await loadSnapshot();
       }
     })();
     return () => {
@@ -169,7 +168,9 @@ export function DashboardShell() {
             </div>
           ) : null}
           {!snapshot && loading ? (
-            <div className="empty-state">Loading CRM snapshot…</div>
+            <div className="empty-state">
+              Pulling latest Google Sheet data… this can take up to a minute on first load.
+            </div>
           ) : null}
           {snapshot ? <ActiveView /> : null}
           {!snapshot && !loading && !error ? (
