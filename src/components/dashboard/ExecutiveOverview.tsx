@@ -135,6 +135,10 @@ export function ExecutiveOverview() {
 
   const { metrics, recovery } = derived;
 
+  const isDemoSeed =
+    snapshot?.syncMeta.source === 'csv' &&
+    (snapshot.syncMeta.message || '').toLowerCase().includes('synthetic');
+
   return (
     <div className="view-stack">
       <header className="view-header">
@@ -146,6 +150,18 @@ export function ExecutiveOverview() {
           </p>
         </div>
       </header>
+
+      {isDemoSeed ? (
+        <div className="insufficient-banner" role="status">
+          <strong>DEMO DATA</strong>
+          <span>
+            Showing the synthetic sample seed ({snapshot?.customers.length ?? 0} customers /{' '}
+            {snapshot?.syncMeta.callCount ?? snapshot?.calls.length ?? 0} calls), not the live
+            Google Sheet. Open <em>Data Health & Settings</em> and click{' '}
+            <strong>Sync published Google Sheet</strong> — first sync can take 1–2 minutes.
+          </span>
+        </div>
+      ) : null}
 
       <MetricCards
         items={[

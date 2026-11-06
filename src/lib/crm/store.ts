@@ -1,6 +1,7 @@
 /**
- * File-based CRM store under data/crm/.
- * Reviews and overrides are additive — never delete original classifications.
+ * CRM store.
+ * Local: JSON files under data/crm/
+ * Vercel: in-memory store (serverless /tmp is not shared across instances).
  */
 
 import { promises as fs } from 'fs';
@@ -17,8 +18,9 @@ import type {
   SyncMeta,
 } from './types';
 
-/** On Vercel the app filesystem is read-only; persist under /tmp. */
-const DATA_DIR = process.env.VERCEL
+const IS_VERCEL = Boolean(process.env.VERCEL);
+
+const DATA_DIR = IS_VERCEL
   ? path.join('/tmp', 'yashodhan-crm')
   : path.join(process.cwd(), 'data', 'crm');
 
@@ -30,11 +32,48 @@ const PATHS = {
   syncMeta: path.join(DATA_DIR, 'sync_meta.json'),
 } as const;
 
+type MemoryStore = {
+  rawRows: RawSheetRow[];
+  calls: CallRecord[];
+  reviews: ManualReview[];
+  overrides: ClassificationOverride[];
+  syncMeta: SyncMeta;
+  snapshot: CrmSnapshot | null;
+};
+
+const globalStore = globalThis as typeof globalThis & {
+  __yashodhanCrmStore?: MemoryStore;
+};
+
+function memory(): MemoryStore {
+  if (!globalStore.__yashodhanCrmStore) {
+    globalStore.__yashodhanCrmStore = {
+      rawRows: [],
+      calls: [],
+      reviews: [],
+      overrides: [],
+      syncMeta: {
+        lastSyncAt: null,
+        lastImportAt: null,
+        source: 'unknown',
+        status: 'idle',
+      },
+      snapshot: null,
+    };
+  }
+  return globalStore.__yashodhanCrmStore;
+}
+
+function invalidateSnapshotCache(): void {
+  memory().snapshot = null;
+}
+
 async function ensureDir(): Promise<void> {
+  if (IS_VERCEL) return;
   await fs.mkdir(DATA_DIR, { recursive: true });
 }
 
-async function readJson<T>(filePath: string, fallback: T): Promise<T> {
+async function readJsonFile<T>(filePath: string, fallback: T): Promise<T> {
   try {
     const raw = await fs.readFile(filePath, 'utf8');
     return JSON.parse(raw) as T;
@@ -45,9 +84,10 @@ async function readJson<T>(filePath: string, fallback: T): Promise<T> {
   }
 }
 
-async function writeJson(filePath: string, data: unknown): Promise<void> {
+async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   await ensureDir();
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
+  // Compact JSON — much faster for large call dumps
+  await fs.writeFile(filePath, JSON.stringify(data), 'utf8');
 }
 
 const DEFAULT_SYNC_META: SyncMeta = {
@@ -58,55 +98,80 @@ const DEFAULT_SYNC_META: SyncMeta = {
 };
 
 export async function loadRawRows(): Promise<RawSheetRow[]> {
-  return readJson<RawSheetRow[]>(PATHS.rawRows, []);
+  if (IS_VERCEL) return memory().rawRows;
+  return readJsonFile<RawSheetRow[]>(PATHS.rawRows, []);
 }
 
 export async function loadCalls(): Promise<CallRecord[]> {
-  return readJson<CallRecord[]>(PATHS.calls, []);
+  if (IS_VERCEL) return memory().calls;
+  return readJsonFile<CallRecord[]>(PATHS.calls, []);
 }
 
 export async function loadReviews(): Promise<ManualReview[]> {
-  return readJson<ManualReview[]>(PATHS.reviews, []);
+  if (IS_VERCEL) return memory().reviews;
+  return readJsonFile<ManualReview[]>(PATHS.reviews, []);
 }
 
 export async function loadOverrides(): Promise<ClassificationOverride[]> {
-  return readJson<ClassificationOverride[]>(PATHS.overrides, []);
+  if (IS_VERCEL) return memory().overrides;
+  return readJsonFile<ClassificationOverride[]>(PATHS.overrides, []);
 }
 
 export async function loadSyncMeta(): Promise<SyncMeta> {
-  return readJson<SyncMeta>(PATHS.syncMeta, DEFAULT_SYNC_META);
+  if (IS_VERCEL) return { ...memory().syncMeta };
+  return readJsonFile<SyncMeta>(PATHS.syncMeta, DEFAULT_SYNC_META);
 }
 
 export async function saveRawRows(
   rows: RawSheetRow[],
   source: SyncMeta['source'] = 'manual',
 ): Promise<void> {
-  await writeJson(PATHS.rawRows, rows);
+  invalidateSnapshotCache();
+  if (IS_VERCEL) {
+    const m = memory();
+    m.rawRows = rows;
+    m.syncMeta = {
+      ...m.syncMeta,
+      lastImportAt: new Date().toISOString(),
+      source,
+      rowCount: rows.length,
+      status: 'ok',
+    };
+    return;
+  }
+  await writeJsonFile(PATHS.rawRows, rows);
   const meta = await loadSyncMeta();
   meta.lastImportAt = new Date().toISOString();
   meta.source = source;
   meta.rowCount = rows.length;
   meta.status = 'ok';
-  await writeJson(PATHS.syncMeta, meta);
+  await writeJsonFile(PATHS.syncMeta, meta);
 }
 
 export async function saveCalls(calls: CallRecord[]): Promise<void> {
-  await writeJson(PATHS.calls, calls);
+  invalidateSnapshotCache();
+  if (IS_VERCEL) {
+    const m = memory();
+    m.calls = calls;
+    m.syncMeta = {
+      ...m.syncMeta,
+      callCount: calls.length,
+    };
+    return;
+  }
+  await writeJsonFile(PATHS.calls, calls);
   const meta = await loadSyncMeta();
   meta.callCount = calls.length;
-  await writeJson(PATHS.syncMeta, meta);
+  await writeJsonFile(PATHS.syncMeta, meta);
 }
 
-/**
- * Append a manual review. Does not mutate classifications.
- */
 export async function addReview(
   review: Omit<ManualReview, 'reviewId' | 'createdAt'> & {
     reviewId?: string;
     createdAt?: string;
   },
 ): Promise<ManualReview> {
-  const reviews = await loadReviews();
+  invalidateSnapshotCache();
   const entry: ManualReview = {
     reviewId: review.reviewId ?? `REV-${Date.now()}`,
     customerId: review.customerId,
@@ -116,22 +181,23 @@ export async function addReview(
     disposition: review.disposition,
     createdAt: review.createdAt ?? new Date().toISOString(),
   };
+  if (IS_VERCEL) {
+    memory().reviews.push(entry);
+    return entry;
+  }
+  const reviews = await loadReviews();
   reviews.push(entry);
-  await writeJson(PATHS.reviews, reviews);
+  await writeJsonFile(PATHS.reviews, reviews);
   return entry;
 }
 
-/**
- * Append a classification override. Original engine category is preserved
- * on the override record — never deleted from the snapshot's engine results.
- */
 export async function addOverride(
   override: Omit<ClassificationOverride, 'overrideId' | 'createdAt'> & {
     overrideId?: string;
     createdAt?: string;
   },
 ): Promise<ClassificationOverride> {
-  const overrides = await loadOverrides();
+  invalidateSnapshotCache();
   const entry: ClassificationOverride = {
     overrideId: override.overrideId ?? `OVR-${Date.now()}`,
     customerId: override.customerId,
@@ -142,23 +208,22 @@ export async function addOverride(
     createdAt: override.createdAt ?? new Date().toISOString(),
     originalCategory: override.originalCategory,
   };
+  if (IS_VERCEL) {
+    memory().overrides.push(entry);
+    return entry;
+  }
+  const overrides = await loadOverrides();
   overrides.push(entry);
-  await writeJson(PATHS.overrides, overrides);
+  await writeJsonFile(PATHS.overrides, overrides);
   return entry;
 }
 
-/**
- * Apply overrides on top of engine classifications without mutating originals.
- * Returns a new array where overridden results carry the override category
- * as primaryCategory, with original preserved in evidence._originalCategory.
- */
 export function applyOverridesToClassifications(
   classifications: ClassificationResult[],
   overrides: ClassificationOverride[],
 ): ClassificationResult[] {
   if (!overrides.length) return classifications;
 
-  // Latest override per process (or customer if no process) wins
   const latest = new Map<string, ClassificationOverride>();
   for (const o of overrides) {
     const key = o.salesProcessId
@@ -194,8 +259,12 @@ export function applyOverridesToClassifications(
   });
 }
 
-/** Build a full CrmSnapshot from persisted files. */
+/** Build a full CrmSnapshot from persisted files / memory. */
 export async function loadSnapshot(): Promise<CrmSnapshot> {
+  if (IS_VERCEL && memory().snapshot) {
+    return memory().snapshot!;
+  }
+
   const [rawRows, calls, reviews, overrides, syncMeta] = await Promise.all([
     loadRawRows(),
     loadCalls(),
@@ -215,7 +284,6 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     calls,
   );
 
-  // Stamp original categories onto overrides that lack them
   const classifications = applyOverridesToClassifications(
     engineClassifications,
     overrides.map((o) => {
@@ -229,7 +297,6 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     }),
   );
 
-  // Attach call ids onto customers via one-pass index
   const callIdsByCustomer = new Map<string, string[]>();
   for (const call of calls) {
     const list = callIdsByCustomer.get(call.customerId);
@@ -240,7 +307,7 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     customer.callRecordIds = callIdsByCustomer.get(customer.customerId) ?? [];
   }
 
-  return {
+  const snapshot: CrmSnapshot = {
     customers: model.customers,
     processes: model.processes,
     interactions: model.interactions,
@@ -255,9 +322,14 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     syncMeta,
     builtAt: new Date().toISOString(),
   };
+
+  if (IS_VERCEL) {
+    memory().snapshot = snapshot;
+  }
+
+  return snapshot;
 }
 
-/** Calls for one customer — used by drawer instead of shipping full call dump. */
 export async function loadCallsForCustomer(
   customerId: string,
 ): Promise<CallRecord[]> {
@@ -266,7 +338,12 @@ export async function loadCallsForCustomer(
 }
 
 export async function saveSyncMeta(meta: SyncMeta): Promise<void> {
-  await writeJson(PATHS.syncMeta, meta);
+  invalidateSnapshotCache();
+  if (IS_VERCEL) {
+    memory().syncMeta = { ...meta };
+    return;
+  }
+  await writeJsonFile(PATHS.syncMeta, meta);
 }
 
-export { PATHS as STORE_PATHS, DATA_DIR };
+export { PATHS as STORE_PATHS, DATA_DIR, IS_VERCEL };

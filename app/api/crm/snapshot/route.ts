@@ -4,7 +4,8 @@ import { ensureSeeded } from '@/lib/crm/seed';
 import type { CallRecord, CrmSnapshot, GlobalFilters } from '@/lib/crm/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+/** Live Google Sheet sync on cold start can exceed default limits. */
+export const maxDuration = 300;
 
 function parseFilters(req: NextRequest): GlobalFilters | null {
   const raw = req.nextUrl.searchParams.get('filters');

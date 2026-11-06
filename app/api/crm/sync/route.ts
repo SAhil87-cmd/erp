@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+/** Published call sheet is ~10MB / 50k+ rows. */
+export const maxDuration = 300;
 
 export async function GET() {
   try {
