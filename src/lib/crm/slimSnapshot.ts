@@ -1,5 +1,5 @@
 /**
- * Shrink CRM snapshots for API responses so Vercel/browser don't hang on 40–90MB JSON.
+ * Shrink CRM snapshots for API responses so Vercel/browser don't OOM on large sheets.
  */
 
 import { calendarDateKey, todayCalendarKey } from './dates';
@@ -7,17 +7,14 @@ import type {
   CallRecord,
   ClassificationResult,
   CrmSnapshot,
+  Customer,
   Interaction,
+  SalesProcess,
 } from './types';
 
-function countCallsByExecutive(
-  calls: CallRecord[],
+function toExecRows(
+  map: Map<string, number>,
 ): Array<{ executiveName: string; callCount: number }> {
-  const map = new Map<string, number>();
-  for (const call of calls) {
-    const name = call.callExecutive?.trim() || 'Unassigned';
-    map.set(name, (map.get(name) ?? 0) + 1);
-  }
   return [...map.entries()]
     .map(([executiveName, callCount]) => ({ executiveName, callCount }))
     .sort(
@@ -62,7 +59,7 @@ function slimClassification(c: ClassificationResult): ClassificationResult {
     salesProcessId: c.salesProcessId,
     currentStage: c.currentStage,
     primaryCategory: c.primaryCategory,
-    underlyingFlags: c.underlyingFlags,
+    underlyingFlags: c.underlyingFlags ?? [],
     callDataStatus: c.callDataStatus,
     missingFields: c.missingFields?.length ? c.missingFields : [],
     recommendedAction: c.recommendedAction,
@@ -72,9 +69,37 @@ function slimClassification(c: ClassificationResult): ClassificationResult {
   };
 }
 
-function slimInteraction(ix: Interaction): Interaction {
-  const { raw: _raw, ...rest } = ix;
-  return { ...rest, raw: {} };
+function slimCustomer(c: Customer): Customer {
+  return {
+    customerId: c.customerId,
+    name: c.name,
+    mobileNum: c.mobileNum,
+    email: c.email,
+    companyName: c.companyName,
+    city: c.city,
+    matchedByPhone: c.matchedByPhone,
+    unmatched: c.unmatched,
+    dataQualityFlags: c.dataQualityFlags?.slice(0, 2) ?? [],
+    salesProcessIds: [],
+    interactionIds: [],
+    callRecordIds: [],
+  };
+}
+
+function slimProcess(p: SalesProcess): SalesProcess {
+  return {
+    salesProcessId: p.salesProcessId,
+    customerId: p.customerId,
+    processName: p.processName,
+    currentStage: p.currentStage,
+    currentStageRaw: p.currentStageRaw,
+    stageEnteredAt: p.stageEnteredAt,
+    projectName: p.projectName,
+    assignedTo: p.assignedTo,
+    source: p.source,
+    interactionIds: [],
+    stageHistory: [],
+  };
 }
 
 /**
@@ -82,62 +107,63 @@ function slimInteraction(ix: Interaction): Interaction {
  */
 export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
   const today = todayCalendarKey();
-  const TODAY_CALL_PREVIEW = 120;
-  const OTHER_CALL_CAP = 180;
+  const TODAY_CALL_PREVIEW = 80;
+  const OTHER_CALL_CAP = 40;
 
-  const todayCalls: CallRecord[] = [];
-  const otherCalls: CallRecord[] = [];
+  const todayPreview: CallRecord[] = [];
+  const otherPreview: CallRecord[] = [];
+  let todayCallCount = 0;
+  const todayByExec = new Map<string, number>();
+  const allByExec = new Map<string, number>();
+
   for (const call of snapshot.calls) {
+    const exec = call.callExecutive?.trim() || 'Unassigned';
+    allByExec.set(exec, (allByExec.get(exec) ?? 0) + 1);
     const day = calendarDateKey(call.callAt || call.callDate || null);
-    if (day === today) todayCalls.push(call);
-    else otherCalls.push(call);
+    if (day === today) {
+      todayCallCount += 1;
+      todayByExec.set(exec, (todayByExec.get(exec) ?? 0) + 1);
+      if (todayPreview.length < TODAY_CALL_PREVIEW) todayPreview.push(call);
+    } else if (otherPreview.length < OTHER_CALL_CAP) {
+      otherPreview.push(call);
+    }
   }
-  todayCalls.sort((a, b) => b.callAt.localeCompare(a.callAt));
-  otherCalls.sort((a, b) => b.callAt.localeCompare(a.callAt));
 
-  const calls = [
-    ...todayCalls.slice(0, TODAY_CALL_PREVIEW),
-    ...otherCalls.slice(0, OTHER_CALL_CAP),
-  ];
-
-  const todayInteractions = snapshot.interactions.filter(
-    (ix) => calendarDateKey(ix.interactionDate) === today,
-  );
-
-  const latestByProcess = new Map<string, Interaction>();
+  let todayInteractionCount = 0;
   for (const ix of snapshot.interactions) {
-    const key = ix.salesProcessId || ix.interactionId;
-    const prev = latestByProcess.get(key);
-    const ixAt = ix.interactionDate || '';
-    const prevAt = prev?.interactionDate || '';
-    if (!prev || ixAt >= prevAt) latestByProcess.set(key, ix);
+    if (calendarDateKey(ix.interactionDate) === today) todayInteractionCount += 1;
   }
 
   return {
-    ...snapshot,
-    customers: snapshot.customers.map((c) => ({
-      ...c,
-      // Drop large id arrays from the wire payload.
-      interactionIds: [],
-      callRecordIds: [],
+    customers: snapshot.customers.map(slimCustomer),
+    processes: snapshot.processes.map(slimProcess),
+    interactions: [],
+    calls: [...todayPreview, ...otherPreview],
+    projects: snapshot.projects,
+    executives: snapshot.executives.map((e) => ({
+      executiveName: e.executiveName,
+      customerIds: [],
+      processIds: [],
     })),
-    processes: snapshot.processes.map((p) => ({
-      ...p,
-      interactionIds: [],
-      stageHistory: p.stageHistory?.slice(-3) ?? [],
-    })),
-    interactions: [...latestByProcess.values()].map(slimInteraction),
-    calls,
+    followUps: snapshot.followUps,
     classifications: snapshot.classifications.map(slimClassification),
+    reviews: snapshot.reviews ?? [],
+    overrides: snapshot.overrides ?? [],
+    dataHealth: {
+      ...snapshot.dataHealth,
+      issues: (snapshot.dataHealth?.issues ?? []).slice(0, 20),
+    },
+    syncMeta: snapshot.syncMeta,
+    builtAt: snapshot.builtAt,
     callTotal: snapshot.calls.length,
-    callsTruncated: calls.length < snapshot.calls.length,
+    callsTruncated: true,
     interactionTotal: snapshot.interactions.length,
     interactionsTruncated: true,
     interactionSeries: buildInteractionSeries(snapshot.interactions),
     activityDate: today,
-    todayCallCount: todayCalls.length,
-    todayInteractionCount: todayInteractions.length,
-    todayCallsByExecutive: countCallsByExecutive(todayCalls),
-    callsByExecutive: countCallsByExecutive(snapshot.calls),
+    todayCallCount,
+    todayInteractionCount,
+    todayCallsByExecutive: toExecRows(todayByExec),
+    callsByExecutive: toExecRows(allByExec),
   };
 }

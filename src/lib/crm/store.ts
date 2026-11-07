@@ -278,6 +278,16 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
   ]);
 
   const model = buildRelationalModel(rawRows);
+  // Drop raw sheet copies from interactions ASAP — they dominate memory on Vercel.
+  if (IS_VERCEL) {
+    for (const ix of model.interactions) {
+      ix.raw = {};
+    }
+    for (const p of model.processes) {
+      p.stageHistory = [];
+      p.interactionIds = [];
+    }
+  }
   const engineClassifications = classifyAllProcesses(
     model.processes.map((p) => ({
       customerId: p.customerId,
