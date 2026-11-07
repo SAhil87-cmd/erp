@@ -142,20 +142,40 @@ export async function ensureSeeded(force = false): Promise<SeedResult> {
   }
 
   if (IS_VERCEL) {
-    const fromSheet = await seedFromPublishedSheet();
-    if (fromSheet) return fromSheet;
-    // Prefer any previously loaded live data over empty/error when sheet is briefly down.
+    // Snapshot GET must not block for minutes on a sheet pull. Empty instances
+    // return quickly; POST /api/crm/sync does the heavy import on demand.
+    if (!force && existing.length === 0) {
+      const snapshot = await loadSnapshot();
+      const waitMeta = await loadSyncMeta();
+      waitMeta.status = 'idle';
+      waitMeta.message =
+        'Waiting for published sheet sync. Use Refresh sheet / dashboard boot sync.';
+      return {
+        seeded: false,
+        rowCount: 0,
+        callCount: 0,
+        message: waitMeta.message,
+        snapshot: { ...snapshot, syncMeta: waitMeta },
+      };
+    }
+
+    // Upgrade leftover synthetic/demo data, or honor force=true.
+    if (force || isSyntheticMeta(meta) || meta.source !== 'google_sheets') {
+      const fromSheet = await seedFromPublishedSheet();
+      if (fromSheet) return fromSheet;
+    }
+
     if (existing.length > 0 && !isSyntheticMeta(meta)) {
       const snapshot = await loadSnapshot();
       return {
         seeded: false,
         rowCount: existing.length,
         callCount: snapshot.calls.length,
-        message: 'Using last synced sheet data (live refresh failed)',
+        message: 'Using last synced sheet data',
         snapshot,
       };
     }
-    // Do NOT fall back to synthetic on Vercel — return empty with clear error.
+
     const snapshot = await loadSnapshot();
     const errMeta = await loadSyncMeta();
     errMeta.status = 'error';

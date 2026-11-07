@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
+import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
+import { loadSnapshot } from '@/lib/crm/store';
 
 export const runtime = 'nodejs';
 /** Published call sheet is ~10MB / 50k+ rows. */
@@ -19,6 +21,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json().catch(() => ({}))) as {
       mode?: 'published' | 'api';
+      includeSnapshot?: boolean;
     };
     const result = await syncFromGoogleSheets({
       mode: body.mode ?? 'published',
@@ -32,14 +35,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Return slim snapshot from THIS serverless instance so the client does not
+    // hit a different empty instance after sync.
+    const includeSnapshot = body.includeSnapshot !== false;
+    const snapshot = includeSnapshot
+      ? slimSnapshotForApi(await loadSnapshot())
+      : null;
+
     return NextResponse.json({
       ok: true,
       result,
       syncMeta,
-      snapshot: result.snapshot ?? null,
+      snapshot,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sync failed';
+    console.error('[api/crm/sync]', err);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

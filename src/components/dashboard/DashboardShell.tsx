@@ -201,7 +201,7 @@ export function DashboardShell() {
           ) : null}
           {!snapshot && loading ? (
             <div className="empty-state">
-              Pulling latest Google Sheet data… this can take up to a minute on first load.
+              Syncing published Google Sheet… first load can take 1–2 minutes. Keep this tab open.
             </div>
           ) : null}
           {snapshot ? <ActiveView /> : null}

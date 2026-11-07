@@ -163,11 +163,20 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-store',
-        body: JSON.stringify({ mode: 'published', force: true }),
+        body: JSON.stringify({
+          mode: 'published',
+          force: true,
+          includeSnapshot: true,
+        }),
       });
       const data = await parseJson(res);
-      // Sync no longer embeds the full snapshot (too large). Always reload.
-      await get().loadSnapshot();
+      // Prefer snapshot from the same serverless instance that just synced.
+      // A follow-up GET /snapshot can hit a different empty instance on Vercel.
+      if (data.snapshot) {
+        set({ snapshot: data.snapshot as CrmSnapshot, loading: false });
+      } else {
+        await get().loadSnapshot();
+      }
       return (data.result?.message as string) || 'Sync completed';
     } catch (err) {
       set({

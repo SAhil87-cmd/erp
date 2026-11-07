@@ -223,8 +223,16 @@ export function CustomerDrawer() {
               </p>
             ) : null}
             <details className="evidence-block">
-              <summary>Evidence</summary>
-              <pre>{JSON.stringify(classification.evidence, null, 2)}</pre>
+              <summary>Classification reasons</summary>
+              <pre>
+                {JSON.stringify(
+                  Object.keys(classification.evidence || {}).length
+                    ? classification.evidence
+                    : classification.reasons,
+                  null,
+                  2,
+                )}
+              </pre>
             </details>
           </section>
 
