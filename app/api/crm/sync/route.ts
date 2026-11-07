@@ -1,3 +1,4 @@
+import { gzipSync } from 'zlib';
 import { NextRequest, NextResponse } from 'next/server';
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
@@ -72,11 +73,15 @@ export async function POST(req: NextRequest) {
       }
       return value;
     });
-    return new NextResponse(json, {
+    // Gzip so browsers finish the download (~0.8MB) instead of stalling on raw multi-MB JSON.
+    const compressed = gzipSync(Buffer.from(json, 'utf8'), { level: 6 });
+    return new NextResponse(compressed, {
       status: 200,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Content-Length': String(Buffer.byteLength(json)),
+        'Content-Encoding': 'gzip',
+        'Cache-Control': 'no-store',
+        Vary: 'Accept-Encoding',
       },
     });
   } catch (err) {

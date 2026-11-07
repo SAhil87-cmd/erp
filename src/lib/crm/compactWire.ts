@@ -109,7 +109,7 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
       p.source ?? '',
       CAT_TO_CODE[cat] ?? '-',
       cls?.callDataStatus === 'INSUFFICIENT_CALL_DATA' ? 'I' : 'O',
-      p.stageEnteredAt ?? '',
+      (p.stageEnteredAt ?? '').slice(0, 10),
       (cls?.underlyingFlags ?? []).map((f) => CAT_TO_CODE[f] ?? '').filter(Boolean).join(''),
     ];
   });
@@ -127,10 +127,15 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
     ]);
   }
 
+  const syncMeta = { ...snapshot.syncMeta };
+  // Long status blurb duplicates published URL and bloats every response.
+  delete (syncMeta as { message?: string }).message;
+  delete (syncMeta as { publishedUrl?: string }).publishedUrl;
+
   return {
     v: 1,
     builtAt: snapshot.builtAt,
-    syncMeta: snapshot.syncMeta,
+    syncMeta,
     callTotal: snapshot.callTotal ?? snapshot.calls.length,
     interactionTotal: snapshot.interactionTotal ?? 0,
     interactionSeries: snapshot.interactionSeries,
@@ -152,11 +157,11 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
       totalRows: snapshot.dataHealth?.totalRows ?? 0,
       validCustomers: snapshot.dataHealth?.validCustomers ?? 0,
       unmatchedRows: snapshot.dataHealth?.unmatchedRows ?? 0,
-      duplicateCustomerIds: (snapshot.dataHealth?.duplicateCustomerIds ?? []).slice(0, 10),
-      duplicatePhones: (snapshot.dataHealth?.duplicatePhones ?? []).slice(0, 10),
+      duplicateCustomerIds: [],
+      duplicatePhones: [],
       missingCustomerIds: snapshot.dataHealth?.missingCustomerIds ?? 0,
       missingPhones: snapshot.dataHealth?.missingPhones ?? 0,
-      issues: (snapshot.dataHealth?.issues ?? []).slice(0, 10),
+      issues: [],
     },
   };
 }
