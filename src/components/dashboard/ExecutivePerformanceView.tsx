@@ -14,19 +14,68 @@ export function ExecutivePerformanceView() {
 
   const rows = useMemo(() => {
     if (!snapshot) return [];
-    return computeExecutivePerformance(filterSnapshotClient(snapshot, filters)).sort(
-      (a, b) => b.closedCount - a.closedCount || b.processCount - a.processCount,
+    const perf = computeExecutivePerformance(
+      filterSnapshotClient(snapshot, filters),
     );
+    const todayMap = new Map(
+      (snapshot.todayCallsByExecutive ?? []).map((r) => [
+        r.executiveName.toLowerCase(),
+        r.callCount,
+      ]),
+    );
+    const allMap = new Map(
+      (snapshot.callsByExecutive ?? []).map((r) => [
+        r.executiveName.toLowerCase(),
+        r.callCount,
+      ]),
+    );
+
+    return perf
+      .map((r) => ({
+        ...r,
+        callsToday: todayMap.get(r.executiveName.toLowerCase()) ?? 0,
+        callsTotal: allMap.get(r.executiveName.toLowerCase()) ?? 0,
+      }))
+      .sort(
+        (a, b) =>
+          b.callsToday - a.callsToday ||
+          b.closedCount - a.closedCount ||
+          b.processCount - a.processCount,
+      );
   }, [snapshot, filters]);
+
+  const callerOnlyRows = useMemo(() => {
+    if (!snapshot?.todayCallsByExecutive?.length) return [];
+    const assigned = new Set(
+      rows.map((r) => r.executiveName.toLowerCase()),
+    );
+    return snapshot.todayCallsByExecutive.filter(
+      (r) => !assigned.has(r.executiveName.toLowerCase()),
+    );
+  }, [snapshot, rows]);
 
   return (
     <div className="view-stack">
       <header className="view-header">
         <div>
           <h1>Executive Performance</h1>
-          <p>Workload, conversion, and intelligence flags by assigned executive.</p>
+          <p>
+            Workload, conversion, and call volume by executive. Call totals come from the
+            full sheet (not the truncated preview).
+          </p>
         </div>
       </header>
+      <ChartCard title="Calls today by executive">
+        <SimpleBarChart
+          data={(snapshot?.todayCallsByExecutive ?? [])
+            .slice(0, 12)
+            .map((r) => ({
+              name: r.executiveName.split(' ')[0],
+              value: r.callCount,
+            }))}
+          color="#2563eb"
+        />
+      </ChartCard>
       <ChartCard title="Closed deals by executive">
         <SimpleBarChart
           data={rows.slice(0, 12).map((r) => ({
@@ -42,6 +91,8 @@ export function ExecutivePerformanceView() {
             <thead>
               <tr>
                 <th>Executive</th>
+                <th>Calls today</th>
+                <th>Calls total</th>
                 <th>Processes</th>
                 <th>Customers</th>
                 <th>Closed</th>
@@ -57,6 +108,8 @@ export function ExecutivePerformanceView() {
               {rows.map((r) => (
                 <tr key={r.executiveName}>
                   <td>{r.executiveName}</td>
+                  <td>{r.callsToday}</td>
+                  <td>{r.callsTotal}</td>
                   <td>{r.processCount}</td>
                   <td>{r.customerCount}</td>
                   <td>{r.closedCount}</td>
@@ -66,6 +119,22 @@ export function ExecutivePerformanceView() {
                   <td>{r.stuckCount}</td>
                   <td>{r.highIntentCount}</td>
                   <td>{r.veryHighIntentCount}</td>
+                </tr>
+              ))}
+              {callerOnlyRows.map((r) => (
+                <tr key={`caller-${r.executiveName}`}>
+                  <td>{r.executiveName}</td>
+                  <td>{r.callCount}</td>
+                  <td>
+                    {snapshot?.callsByExecutive?.find(
+                      (x) =>
+                        x.executiveName.toLowerCase() ===
+                        r.executiveName.toLowerCase(),
+                    )?.callCount ?? r.callCount}
+                  </td>
+                  <td colSpan={9} className="cell-muted">
+                    Caller present in call history (no assigned CRM processes)
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -14,18 +14,56 @@ export function TodaysActivityView() {
   const setSelectedLead = useCrmStore((s) => s.setSelectedLead);
 
   const activity = useMemo(() => {
+    const today = snapshot?.activityDate || todayCalendarKey();
     if (!snapshot) {
-      return { interactions: [], calls: [], today: todayCalendarKey() };
+      return {
+        interactions: [],
+        calls: [],
+        today,
+        callCount: 0,
+        interactionCount: 0,
+        byExecutive: [] as Array<{ executiveName: string; callCount: number }>,
+      };
     }
     const filtered = filterSnapshotClient(snapshot, filters);
-    const today = todayCalendarKey();
     const interactions = filtered.interactions.filter(
       (ix) => calendarDateKey(ix.interactionDate) === today,
     );
     const calls = filtered.calls.filter(
       (c) => calendarDateKey(c.callAt || c.callDate || null) === today,
     );
-    return { interactions, calls, today };
+    // Prefer server full-count (from unslimmed store); fall back to filtered preview.
+    const callCount =
+      !filters.executives?.length &&
+      !filters.projects?.length &&
+      !filters.stages?.length &&
+      !filters.search
+        ? (snapshot.todayCallCount ?? calls.length)
+        : calls.length;
+    const interactionCount =
+      !filters.executives?.length &&
+      !filters.projects?.length &&
+      !filters.stages?.length &&
+      !filters.search
+        ? (snapshot.todayInteractionCount ?? interactions.length)
+        : interactions.length;
+
+    let byExecutive = snapshot.todayCallsByExecutive ?? [];
+    if (filters.executives?.length) {
+      const want = new Set(filters.executives.map((e) => e.toLowerCase()));
+      byExecutive = byExecutive.filter((r) =>
+        want.has(r.executiveName.toLowerCase()),
+      );
+    }
+
+    return {
+      interactions,
+      calls,
+      today,
+      callCount,
+      interactionCount,
+      byExecutive,
+    };
   }, [snapshot, filters]);
 
   const customers = useMemo(
@@ -43,10 +81,42 @@ export function TodaysActivityView() {
       </header>
       <MetricCards
         items={[
-          { label: "Today's interactions", value: activity.interactions.length },
-          { label: "Today's calls", value: activity.calls.length },
+          { label: "Today's interactions", value: activity.interactionCount },
+          {
+            label: "Today's calls",
+            value: activity.callCount,
+            hint:
+              snapshot?.callsTruncated && activity.callCount > activity.calls.length
+                ? `Full day total ${activity.callCount.toLocaleString()} (list preview ${activity.calls.length})`
+                : undefined,
+          },
         ]}
       />
+
+      {activity.byExecutive.length > 0 ? (
+        <section className="dash-card">
+          <h2 className="section-title">Calls today by executive</h2>
+          <div className="table-scroll">
+            <table className="leads-table">
+              <thead>
+                <tr>
+                  <th>Executive / caller</th>
+                  <th>Calls today</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activity.byExecutive.map((row) => (
+                  <tr key={row.executiveName}>
+                    <td>{row.executiveName}</td>
+                    <td>{row.callCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
+
       <FollowUpCentre />
       <div className="split-grid">
         <section className="dash-card">
@@ -83,16 +153,17 @@ export function TodaysActivityView() {
         <section className="dash-card">
           <h2 className="section-title">Calls today</h2>
           {activity.calls.length === 0 ? (
-            <div className="empty-state">No calls dated today.</div>
+            <div className="empty-state">No calls dated today in the preview list.</div>
           ) : (
             <ul className="timeline">
-              {activity.calls.slice(0, 30).map((call) => (
+              {activity.calls.slice(0, 50).map((call) => (
                 <li key={call.callRecordId}>
                   <strong>
                     {customers.get(call.customerId)?.name || call.customerId}
                   </strong>
                   <span>
-                    {call.callOutcome} · {call.durationSeconds}s
+                    {call.callExecutive || 'Unassigned'} · {call.callOutcome} ·{' '}
+                    {call.durationSeconds}s
                   </span>
                   <em>{formatDate(call.callAt)}</em>
                 </li>

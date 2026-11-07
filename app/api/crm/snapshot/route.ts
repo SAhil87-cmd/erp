@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { calendarDateKey } from '@/lib/crm/dates';
+import { calendarDateKey, todayCalendarKey } from '@/lib/crm/dates';
 import { applyGlobalFilters } from '@/lib/crm/filters';
 import { ensureSeeded } from '@/lib/crm/seed';
 import type {
@@ -62,27 +62,45 @@ function buildInteractionSeries(
   return { daily, monthly };
 }
 
+function countCallsByExecutive(
+  calls: CallRecord[],
+): Array<{ executiveName: string; callCount: number }> {
+  const map = new Map<string, number>();
+  for (const call of calls) {
+    const name = call.callExecutive?.trim() || 'Unassigned';
+    map.set(name, (map.get(name) ?? 0) + 1);
+  }
+  return [...map.entries()]
+    .map(([executiveName, callCount]) => ({ executiveName, callCount }))
+    .sort((a, b) => b.callCount - a.callCount || a.executiveName.localeCompare(b.executiveName));
+}
+
 /**
  * Full call/interaction arrays (~50k+) hang JSON serialization on Vercel and
- * freeze the browser. Keep recent samples; charts use pre-aggregated series.
+ * freeze the browser. Keep ALL of today's calls + a recent sample; KPIs use
+ * pre-aggregated totals from the full store.
  */
-function slimSnapshot(snapshot: CrmSnapshot): CrmSnapshot & {
-  callTotal: number;
-  callsTruncated: boolean;
-  interactionTotal: number;
-  interactionsTruncated: boolean;
-  interactionSeries: {
-    daily: Array<{ name: string; value: number }>;
-    monthly: Array<{ name: string; value: number }>;
-  };
-} {
-  const CALL_CAP = 500;
-  const callsTruncated = snapshot.calls.length > CALL_CAP;
-  const calls: CallRecord[] = callsTruncated
-    ? [...snapshot.calls]
-        .sort((a, b) => b.callAt.localeCompare(a.callAt))
-        .slice(0, CALL_CAP)
-    : snapshot.calls;
+function slimSnapshot(snapshot: CrmSnapshot): CrmSnapshot {
+  const today = todayCalendarKey();
+  const OTHER_CAP = 300;
+
+  const todayCalls: CallRecord[] = [];
+  const otherCalls: CallRecord[] = [];
+  for (const call of snapshot.calls) {
+    const day = calendarDateKey(call.callAt || call.callDate || null);
+    if (day === today) todayCalls.push(call);
+    else otherCalls.push(call);
+  }
+
+  todayCalls.sort((a, b) => b.callAt.localeCompare(a.callAt));
+  otherCalls.sort((a, b) => b.callAt.localeCompare(a.callAt));
+
+  const calls = [...todayCalls, ...otherCalls.slice(0, OTHER_CAP)];
+  const callsTruncated = calls.length < snapshot.calls.length;
+
+  const todayInteractions = snapshot.interactions.filter(
+    (ix) => calendarDateKey(ix.interactionDate) === today,
+  );
 
   const interactionSeries = buildInteractionSeries(snapshot.interactions);
 
@@ -108,6 +126,11 @@ function slimSnapshot(snapshot: CrmSnapshot): CrmSnapshot & {
     interactionTotal: snapshot.interactions.length,
     interactionsTruncated,
     interactionSeries,
+    activityDate: today,
+    todayCallCount: todayCalls.length,
+    todayInteractionCount: todayInteractions.length,
+    todayCallsByExecutive: countCallsByExecutive(todayCalls),
+    callsByExecutive: countCallsByExecutive(snapshot.calls),
   };
 }
 

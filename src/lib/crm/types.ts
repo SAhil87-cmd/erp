@@ -314,4 +314,14 @@ export interface CrmSnapshot {
     daily: Array<{ name: string; value: number }>;
     monthly: Array<{ name: string; value: number }>;
   };
+  /** Asia/Kolkata calendar day used for today* aggregates. */
+  activityDate?: string;
+  /** Full call count for activityDate (not limited by calls[] preview). */
+  todayCallCount?: number;
+  /** Full interaction count for activityDate. */
+  todayInteractionCount?: number;
+  /** Caller / executive call totals for activityDate from the full call store. */
+  todayCallsByExecutive?: Array<{ executiveName: string; callCount: number }>;
+  /** All-time call totals by caller from the full call store. */
+  callsByExecutive?: Array<{ executiveName: string; callCount: number }>;
 }
