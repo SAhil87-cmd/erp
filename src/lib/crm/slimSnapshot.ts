@@ -116,6 +116,8 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
   const todayByExec = new Map<string, number>();
   const allByExec = new Map<string, number>();
 
+  // Calls are typically oldest-first; keep a trailing window so previews
+  // are the most recent rows, not June leftovers from the head of the array.
   for (const call of snapshot.calls) {
     const exec = call.callExecutive?.trim() || 'Unassigned';
     allByExec.set(exec, (allByExec.get(exec) ?? 0) + 1);
@@ -123,9 +125,11 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
     if (day === today) {
       todayCallCount += 1;
       todayByExec.set(exec, (todayByExec.get(exec) ?? 0) + 1);
-      if (todayPreview.length < TODAY_CALL_PREVIEW) todayPreview.push(call);
-    } else if (otherPreview.length < OTHER_CALL_CAP) {
+      todayPreview.push(call);
+      if (todayPreview.length > TODAY_CALL_PREVIEW) todayPreview.shift();
+    } else {
       otherPreview.push(call);
+      if (otherPreview.length > OTHER_CALL_CAP) otherPreview.shift();
     }
   }
 
