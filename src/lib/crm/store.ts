@@ -7,6 +7,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { classifyAllProcesses } from './classification/engine';
+import { calendarDateKey } from './dates';
 import { buildRelationalModel } from './normalize';
 import {
   buildInteractionSeries,
@@ -308,6 +309,18 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
       exec.processIds = [];
     }
     interactionSeries = buildInteractionSeries(model.interactions);
+    // Stamp last interaction day on processes before dropping interaction bodies.
+    const lastIx = new Map<string, string>();
+    for (const ix of model.interactions) {
+      const key = calendarDateKey(ix.interactionDate);
+      if (!key) continue;
+      const prev = lastIx.get(ix.salesProcessId);
+      if (!prev || key > prev) lastIx.set(ix.salesProcessId, key);
+    }
+    for (const p of model.processes) {
+      p.lastInteractionDate =
+        lastIx.get(p.salesProcessId) ?? calendarDateKey(p.stageEnteredAt);
+    }
     // Drop interaction bodies before classification doubles peak memory.
     model.interactions = [];
   }

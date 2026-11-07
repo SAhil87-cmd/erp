@@ -76,14 +76,28 @@ export function TodaysActivityView() {
       <header className="view-header">
         <div>
           <h1>Today&apos;s Activity</h1>
-          <p>Follow-ups, interactions, and calls for {activity.today} (Asia/Kolkata).</p>
+          <p>
+            Follow-ups, interactions, and calls for {activity.today} (Asia/Kolkata)
+            {snapshot?.activityDateIsFallback
+              ? ' — latest day with published sheet activity (calendar today has none yet).'
+              : '.'}
+          </p>
         </div>
       </header>
+      {snapshot?.activityDateIsFallback ? (
+        <div className="insufficient-banner" role="status">
+          <strong>Showing {activity.today}</strong>
+          <span>
+            The published Google Sheet has no calls for calendar today yet, so executive
+            call counts use the latest day with data.
+          </span>
+        </div>
+      ) : null}
       <MetricCards
         items={[
-          { label: "Today's interactions", value: activity.interactionCount },
+          { label: `Interactions (${activity.today})`, value: activity.interactionCount },
           {
-            label: "Today's calls",
+            label: `Calls (${activity.today})`,
             value: activity.callCount,
             hint:
               snapshot?.callsTruncated && activity.callCount > activity.calls.length
@@ -95,7 +109,7 @@ export function TodaysActivityView() {
 
       {activity.byExecutive.length > 0 ? (
         <section className="dash-card">
-          <h2 className="section-title">Calls today by executive</h2>
+          <h2 className="section-title">Calls by executive — {activity.today}</h2>
           <div className="table-scroll">
             <table className="leads-table">
               <thead>

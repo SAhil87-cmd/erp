@@ -37,8 +37,10 @@ const CODE_TO_CAT: Record<string, IntelligenceCategory> = {
   '-': 'NONE',
 };
 
-/** [pid, cid, name, mobile, stage, assigned, project, source, catCode, cds, stageEnteredAt, flags] */
+/** [pid, cid, name, mobile, stage, assigned, project, source, catCode, cds, stageEnteredAt, flags, lastIx, lastCall] */
 export type CompactLeadRow = [
+  string,
+  string,
   string,
   string,
   string,
@@ -64,10 +66,12 @@ export interface CompactCrmWire {
   interactionTotal: number;
   interactionSeries?: CrmSnapshot['interactionSeries'];
   activityDate?: string;
+  activityDateIsFallback?: boolean;
   todayCallCount?: number;
   todayInteractionCount?: number;
   todayCallsByExecutive?: CrmSnapshot['todayCallsByExecutive'];
   callsByExecutive?: CrmSnapshot['callsByExecutive'];
+  callsByDayByExecutive?: CrmSnapshot['callsByDayByExecutive'];
   leads: CompactLeadRow[];
   followUps: CompactFollowUpRow[];
   calls: CallRecord[];
@@ -112,6 +116,8 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
       cls?.callDataStatus === 'INSUFFICIENT_CALL_DATA' ? 'I' : 'O',
       (p.stageEnteredAt ?? '').slice(0, 10),
       (cls?.underlyingFlags ?? []).map((f) => CAT_TO_CODE[f] ?? '').filter(Boolean).join(''),
+      p.lastInteractionDate ?? calendarDateKey(p.stageEnteredAt) ?? '',
+      p.lastCallDate ?? '',
     ];
   });
 
@@ -154,10 +160,12 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
     interactionTotal: snapshot.interactionTotal ?? 0,
     interactionSeries: snapshot.interactionSeries,
     activityDate: snapshot.activityDate,
+    activityDateIsFallback: snapshot.activityDateIsFallback,
     todayCallCount: snapshot.todayCallCount,
     todayInteractionCount: snapshot.todayInteractionCount,
     todayCallsByExecutive: snapshot.todayCallsByExecutive,
     callsByExecutive: snapshot.callsByExecutive,
+    callsByDayByExecutive: snapshot.callsByDayByExecutive,
     leads,
     followUps,
     calls: snapshot.calls ?? [],
@@ -199,6 +207,8 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
     const cds = row[9] == null ? 'O' : String(row[9]);
     const stageEnteredAt = row[10] == null ? '' : String(row[10]);
     const flagsRaw = row[11] == null ? '' : String(row[11]);
+    const lastInteractionDate = row[12] == null ? '' : String(row[12]);
+    const lastCallDate = row[13] == null ? '' : String(row[13]);
     if (!salesProcessId || !customerId) continue;
 
     if (!seenCustomer.has(customerId)) {
@@ -226,6 +236,8 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
       source: source || undefined,
       interactionIds: [],
       stageHistory: [],
+      lastInteractionDate: lastInteractionDate || null,
+      lastCallDate: lastCallDate || null,
     });
 
     const primaryCategory = CODE_TO_CAT[catCode] ?? 'NONE';
@@ -288,9 +300,11 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
     interactionsTruncated: true,
     interactionSeries: wire.interactionSeries,
     activityDate: wire.activityDate,
+    activityDateIsFallback: wire.activityDateIsFallback,
     todayCallCount: wire.todayCallCount,
     todayInteractionCount: wire.todayInteractionCount,
     todayCallsByExecutive: wire.todayCallsByExecutive,
     callsByExecutive: wire.callsByExecutive,
+    callsByDayByExecutive: wire.callsByDayByExecutive,
   };
 }

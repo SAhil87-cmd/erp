@@ -116,10 +116,13 @@ describe('compactWire', () => {
       'O',
       '2026-11-01',
       null as unknown as string,
+      '2026-11-01',
+      '2026-11-06',
     ];
     const restored = fromCompactWire(wire);
     expect(restored.customers).toHaveLength(1);
     expect(restored.classifications[0]?.primaryCategory).toBe('GONE_DARK');
     expect(restored.classifications[0]?.underlyingFlags).toEqual([]);
+    expect(restored.processes[0]?.lastCallDate).toBe('2026-11-06');
   });
 });

@@ -122,16 +122,16 @@ function slimCall(c: CallRecord): CallRecord {
  * `calls` must be the full call list (used for aggregates); it is not retained.
  */
 export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
-  const today = todayCalendarKey();
+  const calendarToday = todayCalendarKey();
   const TODAY_CALL_PREVIEW = 60;
   const OTHER_CALL_CAP = 30;
+  const DAY_HISTORY = 14;
 
-  let todayCallCount = 0;
-  const todayByExec = new Map<string, number>();
   const allByExec = new Map<string, number>();
-  // Index of last N matches without O(n) shift on every push.
-  const todayIdx: number[] = [];
-  const otherIdx: number[] = [];
+  const byDayExec = new Map<string, Map<string, number>>();
+  const lastCallByProcess = new Map<string, string>();
+  const lastCallByCustomer = new Map<string, string>();
+  let latestCallDay: string | null = null;
 
   const calls = snapshot.calls;
   for (let i = 0; i < calls.length; i += 1) {
@@ -139,33 +139,105 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
     const exec = call.callExecutive?.trim() || 'Unassigned';
     allByExec.set(exec, (allByExec.get(exec) ?? 0) + 1);
     const day = calendarDateKey(call.callAt || call.callDate || null);
-    if (day === today) {
-      todayCallCount += 1;
-      todayByExec.set(exec, (todayByExec.get(exec) ?? 0) + 1);
-      todayIdx.push(i);
-      if (todayIdx.length > TODAY_CALL_PREVIEW) todayIdx.shift();
+    if (!day) continue;
+    if (!latestCallDay || day > latestCallDay) latestCallDay = day;
+
+    let dayMap = byDayExec.get(day);
+    if (!dayMap) {
+      dayMap = new Map();
+      byDayExec.set(day, dayMap);
+    }
+    dayMap.set(exec, (dayMap.get(exec) ?? 0) + 1);
+
+    if (call.salesProcessId) {
+      const prev = lastCallByProcess.get(call.salesProcessId);
+      if (!prev || day > prev) lastCallByProcess.set(call.salesProcessId, day);
+    }
+    if (call.customerId) {
+      const prev = lastCallByCustomer.get(call.customerId);
+      if (!prev || day > prev) lastCallByCustomer.set(call.customerId, day);
+    }
+  }
+
+  // If the published sheet has no rows for calendar-today, show the latest day
+  // that does — otherwise every exec "calls today" KPI stays stuck at 0.
+  const activityDate =
+    (byDayExec.get(calendarToday)?.size ?? 0) > 0
+      ? calendarToday
+      : (latestCallDay ?? calendarToday);
+  const activityDateIsFallback = activityDate !== calendarToday;
+
+  const activityByExec = byDayExec.get(activityDate) ?? new Map<string, number>();
+  let todayCallCount = 0;
+  for (const n of activityByExec.values()) todayCallCount += n;
+
+  const activityIdx: number[] = [];
+  const otherIdx: number[] = [];
+  for (let i = 0; i < calls.length; i += 1) {
+    const call = calls[i]!;
+    const day = calendarDateKey(call.callAt || call.callDate || null);
+    if (day === activityDate) {
+      activityIdx.push(i);
+      if (activityIdx.length > TODAY_CALL_PREVIEW) activityIdx.shift();
     } else {
       otherIdx.push(i);
       if (otherIdx.length > OTHER_CALL_CAP) otherIdx.shift();
     }
   }
 
-  const todayPreview = todayIdx.map((i) => slimCall(calls[i]!));
-  const otherPreview = otherIdx.map((i) => slimCall(calls[i]!));
-
+  const lastIxByProcess = new Map<string, string>();
   let todayInteractionCount = 0;
   for (const ix of snapshot.interactions) {
-    if (calendarDateKey(ix.interactionDate) === today) todayInteractionCount += 1;
+    const key = calendarDateKey(ix.interactionDate);
+    if (!key) continue;
+    if (key === activityDate) todayInteractionCount += 1;
+    const prev = lastIxByProcess.get(ix.salesProcessId);
+    if (!prev || key > prev) lastIxByProcess.set(ix.salesProcessId, key);
   }
 
   const interactionSeries =
     snapshot.interactionSeries ?? buildInteractionSeries(snapshot.interactions);
 
+  const callsByDayByExecutive = [...byDayExec.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-DAY_HISTORY)
+    .map(([date, execMap]) => {
+      const byExecutive = toExecRows(execMap);
+      return {
+        date,
+        total: byExecutive.reduce((sum, r) => sum + r.callCount, 0),
+        byExecutive,
+      };
+    });
+
+  // When interactions were already dropped (Vercel), recover the activity-day
+  // interaction count from the pre-built series.
+  if (todayInteractionCount === 0 && interactionSeries?.daily?.length) {
+    const needle = activityDate.slice(5);
+    const hit = interactionSeries.daily.find((d) => d.name === needle);
+    if (hit) todayInteractionCount = hit.value;
+  }
+
+  const processes = snapshot.processes.map((p) => ({
+    ...slimProcess(p),
+    lastInteractionDate:
+      p.lastInteractionDate ??
+      lastIxByProcess.get(p.salesProcessId) ??
+      calendarDateKey(p.stageEnteredAt),
+    lastCallDate:
+      lastCallByProcess.get(p.salesProcessId) ??
+      lastCallByCustomer.get(p.customerId) ??
+      null,
+  }));
+
   return {
     customers: snapshot.customers.map(slimCustomer),
-    processes: snapshot.processes.map(slimProcess),
+    processes,
     interactions: [],
-    calls: [...todayPreview, ...otherPreview],
+    calls: [
+      ...activityIdx.map((i) => slimCall(calls[i]!)),
+      ...otherIdx.map((i) => slimCall(calls[i]!)),
+    ],
     projects: (snapshot.projects ?? []).map((p) => ({
       projectName: p.projectName,
       customerIds: [],
@@ -208,10 +280,12 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
       snapshot.interactionTotal ?? snapshot.interactions.length,
     interactionsTruncated: true,
     interactionSeries,
-    activityDate: today,
+    activityDate,
+    activityDateIsFallback,
     todayCallCount,
     todayInteractionCount,
-    todayCallsByExecutive: toExecRows(todayByExec),
+    todayCallsByExecutive: toExecRows(activityByExec),
     callsByExecutive: toExecRows(allByExec),
+    callsByDayByExecutive,
   };
 }

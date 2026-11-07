@@ -69,15 +69,23 @@ function processMatchesDate(
       break;
     }
     case 'call': {
-      const relevant = calls.filter((c) => c.customerId === process.customerId);
-      return relevant.some((c) => {
-        const k = calendarDateKey(c.callAt || c.callDate || null);
-        return isCalendarKeyInRange(k, filters.dateFrom, filters.dateTo);
-      });
+      if (calls.length > 0) {
+        const relevant = calls.filter((c) => c.customerId === process.customerId);
+        return relevant.some((c) => {
+          const k = calendarDateKey(c.callAt || c.callDate || null);
+          return isCalendarKeyInRange(k, filters.dateFrom, filters.dateTo);
+        });
+      }
+      // Preview calls are truncated — use stamped lastCallDate from full sync.
+      key = process.lastCallDate ?? null;
+      break;
     }
     case 'interaction':
     default:
-      key = latestInteractionDate(process.salesProcessId, interactions);
+      key =
+        latestInteractionDate(process.salesProcessId, interactions) ??
+        process.lastInteractionDate ??
+        calendarDateKey(process.stageEnteredAt);
       break;
   }
   return isCalendarKeyInRange(key, filters.dateFrom, filters.dateTo);

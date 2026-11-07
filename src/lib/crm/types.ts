@@ -104,6 +104,10 @@ export interface SalesProcess {
   source?: string;
   interactionIds: string[];
   stageHistory: StageHistoryEntry[];
+  /** Latest interaction calendar day (YYYY-MM-DD) when interactions[] is truncated. */
+  lastInteractionDate?: string | null;
+  /** Latest call calendar day (YYYY-MM-DD) when calls[] is truncated. */
+  lastCallDate?: string | null;
 }
 
 export interface FollowUpActivity {
@@ -314,8 +318,10 @@ export interface CrmSnapshot {
     daily: Array<{ name: string; value: number }>;
     monthly: Array<{ name: string; value: number }>;
   };
-  /** Asia/Kolkata calendar day used for today* aggregates. */
+  /** Asia/Kolkata calendar day used for today* aggregates (falls back to latest sheet day). */
   activityDate?: string;
+  /** True when activityDate is not calendar-today because the sheet has no today rows yet. */
+  activityDateIsFallback?: boolean;
   /** Full call count for activityDate (not limited by calls[] preview). */
   todayCallCount?: number;
   /** Full interaction count for activityDate. */
@@ -324,4 +330,10 @@ export interface CrmSnapshot {
   todayCallsByExecutive?: Array<{ executiveName: string; callCount: number }>;
   /** All-time call totals by caller from the full call store. */
   callsByExecutive?: Array<{ executiveName: string; callCount: number }>;
+  /** Recent daily call totals by executive (Asia/Kolkata), newest last. */
+  callsByDayByExecutive?: Array<{
+    date: string;
+    total: number;
+    byExecutive: Array<{ executiveName: string; callCount: number }>;
+  }>;
 }

@@ -61,11 +61,20 @@ export function ExecutivePerformanceView() {
           <h1>Executive Performance</h1>
           <p>
             Workload, conversion, and call volume by executive. Call totals come from the
-            full sheet (not the truncated preview).
+            full sheet (not the truncated preview)
+            {snapshot?.activityDate
+              ? `. Activity day: ${snapshot.activityDate}${
+                  snapshot.activityDateIsFallback
+                    ? ' (latest published day — calendar today has no calls yet)'
+                    : ''
+                }`
+              : '.'}
           </p>
         </div>
       </header>
-      <ChartCard title="Calls today by executive">
+      <ChartCard
+        title={`Calls by executive — ${snapshot?.activityDate ?? 'activity day'}`}
+      >
         <SimpleBarChart
           data={(snapshot?.todayCallsByExecutive ?? [])
             .slice(0, 12)
@@ -76,6 +85,17 @@ export function ExecutivePerformanceView() {
           color="#2563eb"
         />
       </ChartCard>
+      {(snapshot?.callsByDayByExecutive?.length ?? 0) > 0 ? (
+        <ChartCard title="Daily call volume (last 14 days with activity)">
+          <SimpleBarChart
+            data={(snapshot?.callsByDayByExecutive ?? []).map((d) => ({
+              name: d.date.slice(5),
+              value: d.total,
+            }))}
+            color="#0f766e"
+          />
+        </ChartCard>
+      ) : null}
       <ChartCard title="Closed deals by executive">
         <SimpleBarChart
           data={rows.slice(0, 12).map((r) => ({
@@ -91,7 +111,7 @@ export function ExecutivePerformanceView() {
             <thead>
               <tr>
                 <th>Executive</th>
-                <th>Calls today</th>
+                <th>Calls ({snapshot?.activityDate?.slice(5) ?? 'day'})</th>
                 <th>Calls total</th>
                 <th>Processes</th>
                 <th>Customers</th>
