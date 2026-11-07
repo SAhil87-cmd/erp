@@ -1,4 +1,3 @@
-import { gzipSync } from 'zlib';
 import { NextRequest, NextResponse } from 'next/server';
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
@@ -42,7 +41,9 @@ export async function POST(req: NextRequest) {
     let snapshotError: string | null = null;
     if (body.includeSnapshot !== false) {
       try {
-        // Compact wire (~2MB) — full CrmSnapshot JSON (~10MB) crashes browser tabs.
+        // Compact wire — full CrmSnapshot JSON (~10MB) crashes browser tabs.
+        // Let the platform gzip; manual Content-Encoding: gzip breaks some browsers
+        // when the CDN compresses again ("Failed to fetch").
         snapshot = toCompactWire(await loadSnapshot());
       } catch (snapErr) {
         snapshotError =
@@ -51,8 +52,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Pre-stringify so NextResponse.json doesn't keep a second object graph
-    // around during serialization (peak RAM is what kills this route on Vercel).
     const payload = {
       ok: true as const,
       result,
@@ -60,7 +59,6 @@ export async function POST(req: NextRequest) {
       snapshot,
       snapshotError,
     };
-    // Drop empty objects/strings on 10k+ rows (keep [] so client .map/.filter stay safe).
     const json = JSON.stringify(payload, (_key, value) => {
       if (value == null) return undefined;
       if (value === '') return undefined;
@@ -73,15 +71,11 @@ export async function POST(req: NextRequest) {
       }
       return value;
     });
-    // Gzip so browsers finish the download (~0.8MB) instead of stalling on raw multi-MB JSON.
-    const compressed = gzipSync(Buffer.from(json, 'utf8'), { level: 6 });
-    return new NextResponse(compressed, {
+    return new NextResponse(json, {
       status: 200,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Content-Encoding': 'gzip',
         'Cache-Control': 'no-store',
-        Vary: 'Accept-Encoding',
       },
     });
   } catch (err) {

@@ -97,7 +97,6 @@ function ActiveView() {
 }
 
 export function DashboardShell() {
-  const loadSnapshot = useCrmStore((s) => s.loadSnapshot);
   const syncSheets = useCrmStore((s) => s.syncSheets);
   const loading = useCrmStore((s) => s.loading);
   const error = useCrmStore((s) => s.error);
@@ -197,7 +196,14 @@ export function DashboardShell() {
           {error ? (
             <div className="error-banner" role="alert">
               {error}
-              <button type="button" className="btn-ghost" onClick={() => loadSnapshot()}>
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={loading}
+                onClick={() => {
+                  void syncSheets().catch(() => undefined);
+                }}
+              >
                 Retry
               </button>
             </div>

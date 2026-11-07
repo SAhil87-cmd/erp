@@ -3,6 +3,7 @@
  * Full CrmSnapshot JSON is ~10MB and crashes mobile/Edge tabs on parse.
  */
 
+import { calendarDateKey, todayCalendarKey } from './dates';
 import type {
   CallDataStatus,
   CallRecord,
@@ -114,9 +115,22 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
     ];
   });
 
+  // Only ship actionable follow-ups (overdue → +14 days, or any revisit).
+  const today = todayCalendarKey();
+  const todayDate = new Date(`${today}T00:00:00+05:30`);
   const followUps: CompactFollowUpRow[] = [];
   for (const fu of snapshot.followUps ?? []) {
     if (!fu.nextFollowUpDate && !fu.revisitDate) continue;
+    const nextKey = calendarDateKey(fu.nextFollowUpDate);
+    const revisitKey = calendarDateKey(fu.revisitDate);
+    let keep = Boolean(revisitKey);
+    if (nextKey) {
+      const nextDate = new Date(`${nextKey}T00:00:00+05:30`);
+      const diffDays =
+        (nextDate.getTime() - todayDate.getTime()) / (86400 * 1000);
+      if (diffDays <= 14) keep = true;
+    }
+    if (!keep) continue;
     followUps.push([
       fu.customerId,
       fu.salesProcessId,
