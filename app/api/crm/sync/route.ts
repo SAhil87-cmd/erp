@@ -8,6 +8,18 @@ export const runtime = 'nodejs';
 /** Published call sheet is ~10MB / 50k+ rows. */
 export const maxDuration = 300;
 
+const jsonReplacer = (_key: string, value: unknown) => {
+  if (value == null) return undefined;
+  if (
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value as object).length === 0
+  ) {
+    return undefined;
+  }
+  return value;
+};
+
 export async function GET() {
   try {
     const status = await getSyncStatus();
@@ -36,11 +48,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let snapshot: unknown = null;
+    let snapshot: string | null = null;
+    let snapshotEncoding: 'gzip-base64' | null = null;
     let snapshotError: string | null = null;
+
     if (body.includeSnapshot !== false) {
       try {
-        snapshot = toCompactWire(await loadSnapshot());
+        // Compact wire gzipped+base64 inside normal JSON.
+        // - Raw multi-MB JSON stalls on Vercel
+        // - application/octet-stream gzip breaks browser fetch ("Failed to fetch")
+        const wire = toCompactWire(await loadSnapshot());
+        const wireJson = JSON.stringify(wire, jsonReplacer);
+        snapshot = gzipSync(Buffer.from(wireJson, 'utf8'), { level: 6 }).toString(
+          'base64',
+        );
+        snapshotEncoding = 'gzip-base64';
       } catch (snapErr) {
         snapshotError =
           snapErr instanceof Error ? snapErr.message : 'Snapshot build failed';
@@ -48,38 +70,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const payload = {
-      ok: true as const,
-      result,
-      syncMeta,
-      snapshot,
-      snapshotError,
-    };
-    // Do not strip '' — in arrays that becomes null and breaks compact lead tuples.
-    const json = JSON.stringify(payload, (_key, value) => {
-      if (value == null) return undefined;
-      if (
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        Object.keys(value as object).length === 0
-      ) {
-        return undefined;
-      }
-      return value;
-    });
-
-    // Raw multi-MB JSON stalls on Vercel (0 bytes for minutes). Gzip ~600KB works.
-    // Use application/octet-stream + custom header so the CDN does not double-encode
-    // as brotli on top of our gzip (that breaks browser fetch/parse).
-    const compressed = gzipSync(Buffer.from(json, 'utf8'), { level: 6 });
-    return new NextResponse(compressed, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'X-Crm-Content-Encoding': 'gzip',
-        'Cache-Control': 'no-store',
+    return NextResponse.json(
+      {
+        ok: true,
+        result,
+        syncMeta,
+        snapshotEncoding,
+        snapshot,
+        snapshotError,
       },
-    });
+      {
+        status: 200,
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sync failed';
     console.error('[api/crm/sync]', err);

@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { fromCompactWire, isCompactCrmWire } from '@/lib/crm/compactWire';
+import { resolveApiSnapshot } from '@/lib/crm/decodeSnapshot';
 import type {
   ClassificationResult,
   CrmSnapshot,
@@ -13,6 +14,14 @@ import type { DashboardTab } from './labels';
 function hydrateSnapshot(raw: unknown): CrmSnapshot {
   if (isCompactCrmWire(raw)) return fromCompactWire(raw);
   return raw as CrmSnapshot;
+}
+
+function isEmptySnapshot(snapshot: CrmSnapshot | null | undefined): boolean {
+  if (!snapshot) return true;
+  return (
+    (snapshot.customers?.length ?? 0) === 0 &&
+    (snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) === 0
+  );
 }
 
 export interface SelectedLead {
@@ -57,25 +66,15 @@ type ApiJson = {
   ok?: boolean;
   error?: string;
   snapshot?: unknown;
+  snapshotEncoding?: string;
   snapshotError?: string;
   result?: { message?: string; [key: string]: unknown };
   [key: string]: unknown;
 };
 
-async function decodeResponseText(res: Response): Promise<string> {
-  const customEncoding = res.headers.get('x-crm-content-encoding') || '';
-  if (customEncoding === 'gzip' && typeof DecompressionStream !== 'undefined') {
-    const ds = new DecompressionStream('gzip');
-    const stream = res.body?.pipeThrough(ds);
-    if (!stream) throw new Error('Empty compressed response from server');
-    return new Response(stream).text();
-  }
-  return res.text();
-}
-
 async function parseJson(res: Response): Promise<ApiJson> {
   const contentType = res.headers.get('content-type') || '';
-  const text = await decodeResponseText(res);
+  const text = await res.text();
   const looksHtml =
     contentType.includes('text/html') ||
     text.trimStart().startsWith('<!DOCTYPE') ||
@@ -104,6 +103,12 @@ async function parseJson(res: Response): Promise<ApiJson> {
   return data;
 }
 
+async function snapshotFromApi(data: ApiJson): Promise<CrmSnapshot | null> {
+  const raw = await resolveApiSnapshot(data);
+  if (!raw) return null;
+  return hydrateSnapshot(raw);
+}
+
 function toUserError(err: unknown, fallback: string): string {
   if (!(err instanceof Error)) return fallback;
   const msg = err.message || fallback;
@@ -122,7 +127,6 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
   selectedLead: null,
 
   loadSnapshot: async () => {
-    // Prefer sheet sync so we never keep an empty snapshot from another instance.
     try {
       await get().syncSheets();
       return;
@@ -135,12 +139,8 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
         cache: 'no-store',
       });
       const data = await parseJson(res);
-      const snapshot = data.snapshot ? hydrateSnapshot(data.snapshot) : null;
-      const empty =
-        !snapshot ||
-        ((snapshot.customers?.length ?? 0) === 0 &&
-          (snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) === 0);
-      if (empty) {
+      const snapshot = await snapshotFromApi(data);
+      if (isEmptySnapshot(snapshot)) {
         set({
           loading: false,
           error:
@@ -158,8 +158,6 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
   },
 
   refresh: async () => {
-    // Always re-sync. GET /snapshot often hits a different empty Vercel instance
-    // and paints an all-zero dashboard.
     await get().syncSheets();
   },
 
@@ -181,13 +179,13 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       const res = await fetch(endpoint, { method: 'POST', body: form });
       const data = await parseJson(res);
       set({
-        snapshot: data.snapshot ? hydrateSnapshot(data.snapshot) : null,
+        snapshot: await snapshotFromApi(data),
         loading: false,
       });
     } catch (err) {
       set({
         loading: false,
-        error: err instanceof Error ? err.message : 'Import failed',
+        error: toUserError(err, 'Import failed'),
       });
       throw err;
     }
@@ -199,13 +197,13 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       const res = await fetch('/api/crm/seed', { method: 'POST' });
       const data = await parseJson(res);
       set({
-        snapshot: data.snapshot ? hydrateSnapshot(data.snapshot) : null,
+        snapshot: await snapshotFromApi(data),
         loading: false,
       });
     } catch (err) {
       set({
         loading: false,
-        error: err instanceof Error ? err.message : 'Seed failed',
+        error: toUserError(err, 'Seed failed'),
       });
       throw err;
     }
@@ -220,7 +218,10 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       try {
         res = await fetch('/api/crm/sync', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
           cache: 'no-store',
           signal: controller.signal,
           body: JSON.stringify({
@@ -233,27 +234,8 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
         clearTimeout(timer);
       }
       const data = await parseJson(res);
-      // Prefer snapshot from the same serverless instance that just synced.
-      // A follow-up GET /snapshot often hits a different empty Vercel instance.
-      if (data.snapshot) {
-        const snapshot = hydrateSnapshot(data.snapshot);
-        const empty =
-          (snapshot.customers?.length ?? 0) === 0 &&
-          (snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) === 0;
-        if (empty) {
-          set({
-            loading: false,
-            error:
-              'Sync finished but returned 0 customers. Click Retry — the sheet may still be publishing.',
-          });
-          throw new Error('Empty snapshot after sync');
-        }
-        set({
-          snapshot,
-          loading: false,
-          error: null,
-        });
-      } else {
+      const snapshot = await snapshotFromApi(data);
+      if (!snapshot) {
         set({
           loading: false,
           error:
@@ -265,6 +247,19 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
             'Snapshot missing after sync',
         );
       }
+      if (isEmptySnapshot(snapshot)) {
+        set({
+          loading: false,
+          error:
+            'Sync finished but returned 0 customers. Click Retry — the sheet may still be publishing.',
+        });
+        throw new Error('Empty snapshot after sync');
+      }
+      set({
+        snapshot,
+        loading: false,
+        error: null,
+      });
       return (data.result?.message as string) || 'Sync completed';
     } catch (err) {
       const message =
@@ -283,7 +278,8 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       body: JSON.stringify(input),
     });
     const data = await parseJson(res);
-    if (data.snapshot) set({ snapshot: hydrateSnapshot(data.snapshot) });
+    const snapshot = await snapshotFromApi(data);
+    if (snapshot) set({ snapshot });
   },
 
   submitOverride: async (input) => {
@@ -293,7 +289,8 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       body: JSON.stringify(input),
     });
     const data = await parseJson(res);
-    if (data.snapshot) set({ snapshot: hydrateSnapshot(data.snapshot) });
+    const snapshot = await snapshotFromApi(data);
+    if (snapshot) set({ snapshot });
   },
 }));
 

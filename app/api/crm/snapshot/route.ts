@@ -1,3 +1,4 @@
+import { gzipSync } from 'zlib';
 import { NextRequest, NextResponse } from 'next/server';
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { applyGlobalFilters } from '@/lib/crm/filters';
@@ -36,18 +37,36 @@ export async function GET(req: NextRequest) {
   try {
     const includeAllCalls =
       req.nextUrl.searchParams.get('includeAllCalls') === '1';
-    // Snapshot GET must stay fast: do not pull the Google Sheet here.
-    // Dashboard boot uses POST /api/crm/sync on the same instance, then this route.
     const result = await ensureSeeded(false);
     const filters = parseFilters(req);
     const full = filters ? filterSnapshot(result.snapshot, filters) : result.snapshot;
     const slim = includeAllCalls ? full : slimSnapshotForApi(full);
+    const wire = toCompactWire(slim);
+    const empty =
+      (wire.leads?.length ?? 0) === 0 && (wire.callTotal ?? 0) === 0;
 
-    return NextResponse.json({
-      ok: true,
-      seeded: result.seeded,
-      snapshot: toCompactWire(slim),
-    });
+    if (empty) {
+      return NextResponse.json({
+        ok: true,
+        seeded: result.seeded,
+        snapshot: wire,
+        empty: true,
+      });
+    }
+
+    const snapshot = gzipSync(Buffer.from(JSON.stringify(wire), 'utf8'), {
+      level: 6,
+    }).toString('base64');
+
+    return NextResponse.json(
+      {
+        ok: true,
+        seeded: result.seeded,
+        snapshotEncoding: 'gzip-base64',
+        snapshot,
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load snapshot';
     console.error('[api/crm/snapshot]', err);
