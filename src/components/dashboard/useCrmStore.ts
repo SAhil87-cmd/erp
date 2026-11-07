@@ -122,26 +122,45 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
   selectedLead: null,
 
   loadSnapshot: async () => {
+    // Prefer sheet sync so we never keep an empty snapshot from another instance.
+    try {
+      await get().syncSheets();
+      return;
+    } catch {
+      // Fall through to GET only if sync fails.
+    }
     set({ loading: true, error: null });
     try {
       const res = await fetch(`/api/crm/snapshot?t=${Date.now()}`, {
         cache: 'no-store',
       });
       const data = await parseJson(res);
-      set({
-        snapshot: data.snapshot ? hydrateSnapshot(data.snapshot) : null,
-        loading: false,
-      });
+      const snapshot = data.snapshot ? hydrateSnapshot(data.snapshot) : null;
+      const empty =
+        !snapshot ||
+        ((snapshot.customers?.length ?? 0) === 0 &&
+          (snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) === 0);
+      if (empty) {
+        set({
+          loading: false,
+          error:
+            'No sheet data on this server instance. Click Retry / Refresh sheet to sync.',
+        });
+        return;
+      }
+      set({ snapshot, loading: false });
     } catch (err) {
       set({
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to load snapshot',
+        error: toUserError(err, 'Failed to load snapshot'),
       });
     }
   },
 
   refresh: async () => {
-    await get().loadSnapshot();
+    // Always re-sync. GET /snapshot often hits a different empty Vercel instance
+    // and paints an all-zero dashboard.
+    await get().syncSheets();
   },
 
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -217,8 +236,20 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       // Prefer snapshot from the same serverless instance that just synced.
       // A follow-up GET /snapshot often hits a different empty Vercel instance.
       if (data.snapshot) {
+        const snapshot = hydrateSnapshot(data.snapshot);
+        const empty =
+          (snapshot.customers?.length ?? 0) === 0 &&
+          (snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) === 0;
+        if (empty) {
+          set({
+            loading: false,
+            error:
+              'Sync finished but returned 0 customers. Click Retry — the sheet may still be publishing.',
+          });
+          throw new Error('Empty snapshot after sync');
+        }
         set({
-          snapshot: hydrateSnapshot(data.snapshot),
+          snapshot,
           loading: false,
           error: null,
         });

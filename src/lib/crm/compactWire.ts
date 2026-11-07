@@ -187,20 +187,19 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
   const classifications: ClassificationResult[] = [];
 
   for (const row of wire.leads) {
-    const [
-      salesProcessId,
-      customerId,
-      name,
-      mobile,
-      stage,
-      assignedTo,
-      projectName,
-      source,
-      catCode,
-      cds,
-      stageEnteredAt,
-      flagsRaw,
-    ] = row;
+    const salesProcessId = String(row[0] ?? '');
+    const customerId = String(row[1] ?? '');
+    const name = row[2] == null ? '' : String(row[2]);
+    const mobile = row[3] == null ? '' : String(row[3]);
+    const stage = String(row[4] ?? 'Unknown');
+    const assignedTo = row[5] == null ? '' : String(row[5]);
+    const projectName = row[6] == null ? '' : String(row[6]);
+    const source = row[7] == null ? '' : String(row[7]);
+    const catCode = row[8] == null ? '-' : String(row[8]);
+    const cds = row[9] == null ? 'O' : String(row[9]);
+    const stageEnteredAt = row[10] == null ? '' : String(row[10]);
+    const flagsRaw = row[11] == null ? '' : String(row[11]);
+    if (!salesProcessId || !customerId) continue;
 
     if (!seenCustomer.has(customerId)) {
       seenCustomer.add(customerId);

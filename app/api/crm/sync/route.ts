@@ -55,9 +55,9 @@ export async function POST(req: NextRequest) {
       snapshot,
       snapshotError,
     };
+    // Do not strip '' — in arrays that becomes null and breaks compact lead tuples.
     const json = JSON.stringify(payload, (_key, value) => {
       if (value == null) return undefined;
-      if (value === '') return undefined;
       if (
         typeof value === 'object' &&
         !Array.isArray(value) &&

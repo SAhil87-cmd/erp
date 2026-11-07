@@ -100,4 +100,26 @@ describe('compactWire', () => {
     ]);
     expect(restored.followUps).toHaveLength(1);
   });
+
+  it('tolerates nulls in lead tuples from JSON replacer', () => {
+    const wire = toCompactWire(sampleSnapshot());
+    wire.leads[0] = [
+      'p1',
+      'c1',
+      'Ada',
+      '999',
+      'Followup',
+      'Ram',
+      'Alpha',
+      null as unknown as string,
+      'G',
+      'O',
+      '2026-11-01',
+      null as unknown as string,
+    ];
+    const restored = fromCompactWire(wire);
+    expect(restored.customers).toHaveLength(1);
+    expect(restored.classifications[0]?.primaryCategory).toBe('GONE_DARK');
+    expect(restored.classifications[0]?.underlyingFlags).toEqual([]);
+  });
 });
