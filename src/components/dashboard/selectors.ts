@@ -7,6 +7,7 @@ import type {
   IntelligenceCategory,
   SalesProcess,
 } from '@/lib/crm/types';
+import { CATEGORY_LABELS } from './labels';
 
 export interface LeadRow {
   customerId: string;
@@ -76,8 +77,10 @@ export function buildLeadRows(
     const customer = customers.get(process.customerId);
     if (!customer) continue;
     const reason =
-      classification.reasons[classification.primaryCategory] ||
-      classification.recommendedAction;
+      classification.reasons?.[classification.primaryCategory] ||
+      classification.recommendedAction ||
+      CATEGORY_LABELS[classification.primaryCategory] ||
+      classification.primaryCategory;
 
     rows.push({
       customerId: process.customerId,
@@ -88,7 +91,7 @@ export function buildLeadRows(
       stage: process.currentStage,
       assignedTo: process.assignedTo || 'Unassigned',
       category: classification.primaryCategory,
-      recommendedAction: classification.recommendedAction,
+      recommendedAction: classification.recommendedAction || reason,
       callDataStatus: classification.callDataStatus,
       reason,
       stageEnteredAt: process.stageEnteredAt,

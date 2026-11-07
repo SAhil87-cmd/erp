@@ -57,7 +57,20 @@ export async function POST(req: NextRequest) {
       snapshot,
       snapshotError,
     };
-    const json = JSON.stringify(payload);
+    // Drop empty nests so 10k+ classification/process rows stay under Vercel RAM.
+    const json = JSON.stringify(payload, (_key, value) => {
+      if (value == null) return undefined;
+      if (Array.isArray(value) && value.length === 0) return undefined;
+      if (
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        Object.keys(value as object).length === 0
+      ) {
+        return undefined;
+      }
+      if (value === '') return undefined;
+      return value;
+    });
     return new NextResponse(json, {
       status: 200,
       headers: {

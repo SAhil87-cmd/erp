@@ -52,8 +52,8 @@ export function buildInteractionSeries(interactions: Interaction[]): {
 }
 
 export function slimClassification(c: ClassificationResult): ClassificationResult {
-  const primaryReason =
-    c.reasons?.[c.primaryCategory] || c.recommendedAction || '';
+  // Reasons/actions are reconstructed on the client from primaryCategory labels.
+  // Omitting them here cuts ~2MB off the sync payload.
   return {
     customerId: c.customerId,
     salesProcessId: c.salesProcessId,
@@ -62,8 +62,8 @@ export function slimClassification(c: ClassificationResult): ClassificationResul
     underlyingFlags: c.underlyingFlags?.length ? c.underlyingFlags : [],
     callDataStatus: c.callDataStatus,
     missingFields: [],
-    recommendedAction: primaryReason.slice(0, 160),
-    reasons: primaryReason ? { [c.primaryCategory]: primaryReason.slice(0, 160) } : {},
+    recommendedAction: '',
+    reasons: {},
     evidence: {},
     ruleResults: {},
   };
@@ -176,7 +176,14 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
       customerIds: [],
       processIds: [],
     })),
-    followUps: snapshot.followUps ?? [],
+    followUps: (snapshot.followUps ?? []).filter((fu) => {
+      const terminal =
+        fu.currentStage === 'Sales Closed' ||
+        fu.currentStage === 'Spam' ||
+        fu.currentStage === 'DND';
+      if (terminal && !fu.nextFollowUpDate && !fu.revisitDate) return false;
+      return true;
+    }),
     classifications: snapshot.classifications.map(slimClassification),
     reviews: snapshot.reviews ?? [],
     overrides: snapshot.overrides ?? [],
