@@ -62,9 +62,20 @@ type ApiJson = {
   [key: string]: unknown;
 };
 
+async function decodeResponseText(res: Response): Promise<string> {
+  const customEncoding = res.headers.get('x-crm-content-encoding') || '';
+  if (customEncoding === 'gzip' && typeof DecompressionStream !== 'undefined') {
+    const ds = new DecompressionStream('gzip');
+    const stream = res.body?.pipeThrough(ds);
+    if (!stream) throw new Error('Empty compressed response from server');
+    return new Response(stream).text();
+  }
+  return res.text();
+}
+
 async function parseJson(res: Response): Promise<ApiJson> {
   const contentType = res.headers.get('content-type') || '';
-  const text = await res.text();
+  const text = await decodeResponseText(res);
   const looksHtml =
     contentType.includes('text/html') ||
     text.trimStart().startsWith('<!DOCTYPE') ||

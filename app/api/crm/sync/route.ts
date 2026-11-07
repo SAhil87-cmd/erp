@@ -1,3 +1,4 @@
+import { gzipSync } from 'zlib';
 import { NextRequest, NextResponse } from 'next/server';
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
@@ -35,15 +36,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Always try to return a slim snapshot from THIS instance. Without it the
-    // next GET /snapshot often hits a different empty Vercel instance (all zeros).
     let snapshot: unknown = null;
     let snapshotError: string | null = null;
     if (body.includeSnapshot !== false) {
       try {
-        // Compact wire — full CrmSnapshot JSON (~10MB) crashes browser tabs.
-        // Let the platform gzip; manual Content-Encoding: gzip breaks some browsers
-        // when the CDN compresses again ("Failed to fetch").
         snapshot = toCompactWire(await loadSnapshot());
       } catch (snapErr) {
         snapshotError =
@@ -71,10 +67,16 @@ export async function POST(req: NextRequest) {
       }
       return value;
     });
-    return new NextResponse(json, {
+
+    // Raw multi-MB JSON stalls on Vercel (0 bytes for minutes). Gzip ~600KB works.
+    // Use application/octet-stream + custom header so the CDN does not double-encode
+    // as brotli on top of our gzip (that breaks browser fetch/parse).
+    const compressed = gzipSync(Buffer.from(json, 'utf8'), { level: 6 });
+    return new NextResponse(compressed, {
       status: 200,
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Type': 'application/octet-stream',
+        'X-Crm-Content-Encoding': 'gzip',
         'Cache-Control': 'no-store',
       },
     });
