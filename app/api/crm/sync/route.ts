@@ -57,10 +57,10 @@ export async function POST(req: NextRequest) {
       snapshot,
       snapshotError,
     };
-    // Drop empty nests so 10k+ classification/process rows stay under Vercel RAM.
+    // Drop empty objects/strings on 10k+ rows (keep [] so client .map/.filter stay safe).
     const json = JSON.stringify(payload, (_key, value) => {
       if (value == null) return undefined;
-      if (Array.isArray(value) && value.length === 0) return undefined;
+      if (value === '') return undefined;
       if (
         typeof value === 'object' &&
         !Array.isArray(value) &&
@@ -68,7 +68,6 @@ export async function POST(req: NextRequest) {
       ) {
         return undefined;
       }
-      if (value === '') return undefined;
       return value;
     });
     return new NextResponse(json, {
