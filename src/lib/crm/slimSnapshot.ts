@@ -24,7 +24,7 @@ function toExecRows(
     );
 }
 
-function buildInteractionSeries(interactions: Interaction[]): {
+export function buildInteractionSeries(interactions: Interaction[]): {
   daily: Array<{ name: string; value: number }>;
   monthly: Array<{ name: string; value: number }>;
 } {
@@ -51,7 +51,7 @@ function buildInteractionSeries(interactions: Interaction[]): {
   return { daily, monthly };
 }
 
-function slimClassification(c: ClassificationResult): ClassificationResult {
+export function slimClassification(c: ClassificationResult): ClassificationResult {
   const primaryReason =
     c.reasons?.[c.primaryCategory] || c.recommendedAction || '';
   return {
@@ -59,40 +59,40 @@ function slimClassification(c: ClassificationResult): ClassificationResult {
     salesProcessId: c.salesProcessId,
     currentStage: c.currentStage,
     primaryCategory: c.primaryCategory,
-    underlyingFlags: c.underlyingFlags ?? [],
+    underlyingFlags: c.underlyingFlags?.length ? c.underlyingFlags : [],
     callDataStatus: c.callDataStatus,
-    missingFields: c.missingFields?.length ? c.missingFields : [],
-    recommendedAction: c.recommendedAction,
-    reasons: primaryReason ? { [c.primaryCategory]: primaryReason } : {},
+    missingFields: [],
+    recommendedAction: primaryReason.slice(0, 160),
+    reasons: primaryReason ? { [c.primaryCategory]: primaryReason.slice(0, 160) } : {},
     evidence: {},
     ruleResults: {},
   };
 }
 
-function slimCustomer(c: Customer): Customer {
+export function slimCustomer(c: Customer): Customer {
   return {
     customerId: c.customerId,
     name: c.name,
     mobileNum: c.mobileNum,
-    email: c.email,
-    companyName: c.companyName,
+    email: undefined,
+    companyName: c.companyName || c.firmName,
     city: c.city,
     matchedByPhone: c.matchedByPhone,
     unmatched: c.unmatched,
-    dataQualityFlags: c.dataQualityFlags?.slice(0, 2) ?? [],
+    dataQualityFlags: [],
     salesProcessIds: [],
     interactionIds: [],
     callRecordIds: [],
   };
 }
 
-function slimProcess(p: SalesProcess): SalesProcess {
+export function slimProcess(p: SalesProcess): SalesProcess {
   return {
     salesProcessId: p.salesProcessId,
     customerId: p.customerId,
     processName: p.processName,
     currentStage: p.currentStage,
-    currentStageRaw: p.currentStageRaw,
+    currentStageRaw: '',
     stageEnteredAt: p.stageEnteredAt,
     projectName: p.projectName,
     assignedTo: p.assignedTo,
@@ -102,68 +102,105 @@ function slimProcess(p: SalesProcess): SalesProcess {
   };
 }
 
+function slimCall(c: CallRecord): CallRecord {
+  return {
+    callRecordId: c.callRecordId,
+    customerId: c.customerId,
+    callAt: c.callAt,
+    callDate: c.callDate,
+    answered: c.answered,
+    callOutcome: c.callOutcome,
+    durationSeconds: c.durationSeconds,
+    callExecutive: c.callExecutive,
+    salesProcessId: c.salesProcessId,
+    salesProcessName: c.salesProcessName,
+  } as CallRecord;
+}
+
 /**
  * Build a browser-safe snapshot from the full in-memory model.
+ * `calls` must be the full call list (used for aggregates); it is not retained.
  */
 export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
   const today = todayCalendarKey();
-  const TODAY_CALL_PREVIEW = 80;
-  const OTHER_CALL_CAP = 40;
+  const TODAY_CALL_PREVIEW = 60;
+  const OTHER_CALL_CAP = 30;
 
-  const todayPreview: CallRecord[] = [];
-  const otherPreview: CallRecord[] = [];
   let todayCallCount = 0;
   const todayByExec = new Map<string, number>();
   const allByExec = new Map<string, number>();
+  // Index of last N matches without O(n) shift on every push.
+  const todayIdx: number[] = [];
+  const otherIdx: number[] = [];
 
-  // Calls are typically oldest-first; keep a trailing window so previews
-  // are the most recent rows, not June leftovers from the head of the array.
-  for (const call of snapshot.calls) {
+  const calls = snapshot.calls;
+  for (let i = 0; i < calls.length; i += 1) {
+    const call = calls[i]!;
     const exec = call.callExecutive?.trim() || 'Unassigned';
     allByExec.set(exec, (allByExec.get(exec) ?? 0) + 1);
     const day = calendarDateKey(call.callAt || call.callDate || null);
     if (day === today) {
       todayCallCount += 1;
       todayByExec.set(exec, (todayByExec.get(exec) ?? 0) + 1);
-      todayPreview.push(call);
-      if (todayPreview.length > TODAY_CALL_PREVIEW) todayPreview.shift();
+      todayIdx.push(i);
+      if (todayIdx.length > TODAY_CALL_PREVIEW) todayIdx.shift();
     } else {
-      otherPreview.push(call);
-      if (otherPreview.length > OTHER_CALL_CAP) otherPreview.shift();
+      otherIdx.push(i);
+      if (otherIdx.length > OTHER_CALL_CAP) otherIdx.shift();
     }
   }
+
+  const todayPreview = todayIdx.map((i) => slimCall(calls[i]!));
+  const otherPreview = otherIdx.map((i) => slimCall(calls[i]!));
 
   let todayInteractionCount = 0;
   for (const ix of snapshot.interactions) {
     if (calendarDateKey(ix.interactionDate) === today) todayInteractionCount += 1;
   }
 
+  const interactionSeries =
+    snapshot.interactionSeries ?? buildInteractionSeries(snapshot.interactions);
+
   return {
     customers: snapshot.customers.map(slimCustomer),
     processes: snapshot.processes.map(slimProcess),
     interactions: [],
     calls: [...todayPreview, ...otherPreview],
-    projects: snapshot.projects,
-    executives: snapshot.executives.map((e) => ({
+    projects: (snapshot.projects ?? []).map((p) => ({
+      projectName: p.projectName,
+      customerIds: [],
+      processIds: [],
+    })),
+    executives: (snapshot.executives ?? []).map((e) => ({
       executiveName: e.executiveName,
       customerIds: [],
       processIds: [],
     })),
-    followUps: snapshot.followUps,
+    followUps: snapshot.followUps ?? [],
     classifications: snapshot.classifications.map(slimClassification),
     reviews: snapshot.reviews ?? [],
     overrides: snapshot.overrides ?? [],
     dataHealth: {
-      ...snapshot.dataHealth,
-      issues: (snapshot.dataHealth?.issues ?? []).slice(0, 20),
+      totalRows: snapshot.dataHealth?.totalRows ?? 0,
+      validCustomers: snapshot.dataHealth?.validCustomers ?? 0,
+      unmatchedRows: snapshot.dataHealth?.unmatchedRows ?? 0,
+      duplicateCustomerIds: (snapshot.dataHealth?.duplicateCustomerIds ?? []).slice(
+        0,
+        10,
+      ),
+      duplicatePhones: (snapshot.dataHealth?.duplicatePhones ?? []).slice(0, 10),
+      missingCustomerIds: snapshot.dataHealth?.missingCustomerIds ?? 0,
+      missingPhones: snapshot.dataHealth?.missingPhones ?? 0,
+      issues: (snapshot.dataHealth?.issues ?? []).slice(0, 10),
     },
     syncMeta: snapshot.syncMeta,
     builtAt: snapshot.builtAt,
-    callTotal: snapshot.calls.length,
+    callTotal: snapshot.callTotal ?? snapshot.calls.length,
     callsTruncated: true,
-    interactionTotal: snapshot.interactions.length,
+    interactionTotal:
+      snapshot.interactionTotal ?? snapshot.interactions.length,
     interactionsTruncated: true,
-    interactionSeries: buildInteractionSeries(snapshot.interactions),
+    interactionSeries,
     activityDate: today,
     todayCallCount,
     todayInteractionCount,

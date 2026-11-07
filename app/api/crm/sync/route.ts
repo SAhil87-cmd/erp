@@ -48,12 +48,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      ok: true,
+    // Pre-stringify so NextResponse.json doesn't keep a second object graph
+    // around during serialization (peak RAM is what kills this route on Vercel).
+    const payload = {
+      ok: true as const,
       result,
       syncMeta,
       snapshot,
       snapshotError,
+    };
+    const json = JSON.stringify(payload);
+    return new NextResponse(json, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': String(Buffer.byteLength(json)),
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sync failed';

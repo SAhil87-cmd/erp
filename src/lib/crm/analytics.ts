@@ -133,7 +133,8 @@ export function computeOverviewMetrics(snapshot: CrmSnapshot): OverviewMetrics {
   return {
     totalCustomers: snapshot.customers.length,
     totalProcesses: snapshot.processes.length,
-    totalInteractions: snapshot.interactions.length,
+    totalInteractions:
+      snapshot.interactionTotal ?? snapshot.interactions.length,
     totalCalls,
     byStage,
     byCategory: countByCategory(snapshot.classifications),

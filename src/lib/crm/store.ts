@@ -8,7 +8,11 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { classifyAllProcesses } from './classification/engine';
 import { buildRelationalModel } from './normalize';
-import { slimSnapshotForApi } from './slimSnapshot';
+import {
+  buildInteractionSeries,
+  slimClassification,
+  slimSnapshotForApi,
+} from './slimSnapshot';
 import type {
   CallRecord,
   ClassificationOverride,
@@ -278,7 +282,10 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
   ]);
 
   const model = buildRelationalModel(rawRows);
-  // Drop raw sheet copies from interactions ASAP — they dominate memory on Vercel.
+
+  // Vercel: free fat intermediates ASAP so sync+snapshot fits in the worker.
+  let interactionSeries: CrmSnapshot['interactionSeries'];
+  let interactionTotal = model.interactions.length;
   if (IS_VERCEL) {
     for (const ix of model.interactions) {
       ix.raw = {};
@@ -287,7 +294,24 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
       p.stageHistory = [];
       p.interactionIds = [];
     }
+    for (const customer of model.customers) {
+      customer.callRecordIds = [];
+      customer.interactionIds = [];
+      customer.salesProcessIds = [];
+    }
+    for (const project of model.projects) {
+      project.customerIds = [];
+      project.processIds = [];
+    }
+    for (const exec of model.executives) {
+      exec.customerIds = [];
+      exec.processIds = [];
+    }
+    interactionSeries = buildInteractionSeries(model.interactions);
+    // Drop interaction bodies before classification doubles peak memory.
+    model.interactions = [];
   }
+
   const engineClassifications = classifyAllProcesses(
     model.processes.map((p) => ({
       customerId: p.customerId,
@@ -299,7 +323,7 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     calls,
   );
 
-  const classifications = applyOverridesToClassifications(
+  let classifications = applyOverridesToClassifications(
     engineClassifications,
     overrides.map((o) => {
       if (o.originalCategory) return o;
@@ -312,6 +336,10 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     }),
   );
 
+  if (IS_VERCEL) {
+    classifications = classifications.map(slimClassification);
+  }
+
   // Avoid allocating tens of thousands of call-id arrays on Vercel (OOM risk).
   if (!IS_VERCEL) {
     const callIdsByCustomer = new Map<string, string[]>();
@@ -322,11 +350,6 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     }
     for (const customer of model.customers) {
       customer.callRecordIds = callIdsByCustomer.get(customer.customerId) ?? [];
-    }
-  } else {
-    for (const customer of model.customers) {
-      customer.callRecordIds = [];
-      customer.interactionIds = [];
     }
   }
 
@@ -344,10 +367,14 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     overrides,
     dataHealth: {
       ...model.dataHealth,
-      issues: model.dataHealth.issues.slice(0, 40),
+      duplicatePhones: model.dataHealth.duplicatePhones.slice(0, 10),
+      duplicateCustomerIds: model.dataHealth.duplicateCustomerIds.slice(0, 10),
+      issues: model.dataHealth.issues.slice(0, 10),
     },
     syncMeta,
     builtAt: new Date().toISOString(),
+    interactionTotal,
+    interactionSeries,
   };
 
   if (IS_VERCEL) {

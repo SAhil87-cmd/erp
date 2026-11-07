@@ -188,12 +188,15 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
     underlyingFlags,
     callDataStatus: finalCallDataStatus,
     missingFields: [...missingFields],
-    recommendedAction: RECOMMENDED_ACTIONS[primaryCategory],
+    recommendedAction: compact
+      ? (reasons[primaryCategory] || primaryCategory).slice(0, 160)
+      : RECOMMENDED_ACTIONS[primaryCategory],
     evidence: compact ? {} : evidence,
     reasons: compact
       ? {
-          [primaryCategory]:
-            reasons[primaryCategory] || RECOMMENDED_ACTIONS[primaryCategory],
+          [primaryCategory]: (
+            reasons[primaryCategory] || RECOMMENDED_ACTIONS[primaryCategory]
+          ).slice(0, 160),
         }
       : reasons,
     ruleResults: compact ? {} : ruleResults,
