@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
 import { loadSnapshot } from '@/lib/crm/store';
 
@@ -36,11 +37,12 @@ export async function POST(req: NextRequest) {
 
     // Always try to return a slim snapshot from THIS instance. Without it the
     // next GET /snapshot often hits a different empty Vercel instance (all zeros).
-    let snapshot = null;
+    let snapshot: unknown = null;
     let snapshotError: string | null = null;
     if (body.includeSnapshot !== false) {
       try {
-        snapshot = await loadSnapshot();
+        // Compact wire (~2MB) — full CrmSnapshot JSON (~10MB) crashes browser tabs.
+        snapshot = toCompactWire(await loadSnapshot());
       } catch (snapErr) {
         snapshotError =
           snapErr instanceof Error ? snapErr.message : 'Snapshot build failed';

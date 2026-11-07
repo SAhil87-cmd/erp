@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { fromCompactWire, isCompactCrmWire } from '@/lib/crm/compactWire';
 import type {
   ClassificationResult,
   CrmSnapshot,
@@ -8,6 +9,11 @@ import type {
   IntelligenceCategory,
 } from '@/lib/crm/types';
 import type { DashboardTab } from './labels';
+
+function hydrateSnapshot(raw: unknown): CrmSnapshot {
+  if (isCompactCrmWire(raw)) return fromCompactWire(raw);
+  return raw as CrmSnapshot;
+}
 
 export interface SelectedLead {
   customerId: string;
@@ -102,7 +108,10 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
         cache: 'no-store',
       });
       const data = await parseJson(res);
-      set({ snapshot: data.snapshot as CrmSnapshot, loading: false });
+      set({
+        snapshot: data.snapshot ? hydrateSnapshot(data.snapshot) : null,
+        loading: false,
+      });
     } catch (err) {
       set({
         loading: false,
@@ -132,7 +141,10 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       const endpoint = kind === 'calls' ? '/api/crm/import-calls' : '/api/crm/import';
       const res = await fetch(endpoint, { method: 'POST', body: form });
       const data = await parseJson(res);
-      set({ snapshot: data.snapshot as CrmSnapshot, loading: false });
+      set({
+        snapshot: data.snapshot ? hydrateSnapshot(data.snapshot) : null,
+        loading: false,
+      });
     } catch (err) {
       set({
         loading: false,
@@ -147,7 +159,10 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
     try {
       const res = await fetch('/api/crm/seed', { method: 'POST' });
       const data = await parseJson(res);
-      set({ snapshot: data.snapshot as CrmSnapshot, loading: false });
+      set({
+        snapshot: data.snapshot ? hydrateSnapshot(data.snapshot) : null,
+        loading: false,
+      });
     } catch (err) {
       set({
         loading: false,
@@ -174,7 +189,11 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       // Prefer snapshot from the same serverless instance that just synced.
       // A follow-up GET /snapshot often hits a different empty Vercel instance.
       if (data.snapshot) {
-        set({ snapshot: data.snapshot as CrmSnapshot, loading: false, error: null });
+        set({
+          snapshot: hydrateSnapshot(data.snapshot),
+          loading: false,
+          error: null,
+        });
       } else {
         set({
           loading: false,
@@ -204,7 +223,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       body: JSON.stringify(input),
     });
     const data = await parseJson(res);
-    set({ snapshot: data.snapshot as CrmSnapshot });
+    if (data.snapshot) set({ snapshot: hydrateSnapshot(data.snapshot) });
   },
 
   submitOverride: async (input) => {
@@ -214,7 +233,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       body: JSON.stringify(input),
     });
     const data = await parseJson(res);
-    set({ snapshot: data.snapshot as CrmSnapshot });
+    if (data.snapshot) set({ snapshot: hydrateSnapshot(data.snapshot) });
   },
 }));
 

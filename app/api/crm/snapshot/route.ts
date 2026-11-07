@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { toCompactWire } from '@/lib/crm/compactWire';
 import { applyGlobalFilters } from '@/lib/crm/filters';
 import { ensureSeeded } from '@/lib/crm/seed';
 import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
@@ -40,12 +41,12 @@ export async function GET(req: NextRequest) {
     const result = await ensureSeeded(false);
     const filters = parseFilters(req);
     const full = filters ? filterSnapshot(result.snapshot, filters) : result.snapshot;
-    const snapshot = includeAllCalls ? full : slimSnapshotForApi(full);
+    const slim = includeAllCalls ? full : slimSnapshotForApi(full);
 
     return NextResponse.json({
       ok: true,
       seeded: result.seeded,
-      snapshot,
+      snapshot: toCompactWire(slim),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load snapshot';

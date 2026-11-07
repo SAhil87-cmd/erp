@@ -15,7 +15,11 @@ export function FollowUpCentre() {
   const buckets = useMemo(() => {
     if (!snapshot) return [];
     const filtered = filterSnapshotClient(snapshot, filters);
-    return computeFollowUpBuckets(filtered.followUps);
+    return computeFollowUpBuckets(
+      filtered.followUps,
+      undefined,
+      filtered.processes,
+    );
   }, [snapshot, filters]);
 
   const customers = useMemo(() => {

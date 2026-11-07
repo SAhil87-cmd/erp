@@ -262,6 +262,7 @@ export function computeProjectIntelligence(
 export function computeFollowUpBuckets(
   followUps: FollowUpActivity[],
   today: string = todayCalendarKey(),
+  processes?: SalesProcess[],
 ): FollowUpBucketResult[] {
   const buckets: Record<FollowUpBucket, FollowUpActivity[]> = {
     today: [],
@@ -273,8 +274,10 @@ export function computeFollowUpBuckets(
   };
 
   const terminal = new Set(['Sales Closed', 'Spam', 'DND']);
+  const datedProcessIds = new Set<string>();
 
   for (const fu of followUps) {
+    datedProcessIds.add(fu.salesProcessId);
     const nextKey = calendarDateKey(fu.nextFollowUpDate);
     const revisitKey = calendarDateKey(fu.revisitDate);
     const isTerminal = terminal.has(fu.currentStage);
@@ -311,6 +314,24 @@ export function computeFollowUpBuckets(
     }
   }
 
+  // Compact wire omits undated follow-ups; derive no-followup from processes.
+  if (processes?.length) {
+    for (const p of processes) {
+      if (datedProcessIds.has(p.salesProcessId)) continue;
+      if (terminal.has(p.currentStage) || p.currentStage === 'Not Interested') {
+        continue;
+      }
+      buckets['no-followup'].push({
+        customerId: p.customerId,
+        salesProcessId: p.salesProcessId,
+        nextFollowUpDate: null,
+        revisitDate: null,
+        assignedTo: p.assignedTo,
+        currentStage: p.currentStage,
+      });
+    }
+  }
+
   return (Object.keys(buckets) as FollowUpBucket[]).map((bucket) => ({
     bucket,
     items: buckets[bucket],
@@ -327,22 +348,20 @@ export function computeRecoveryMetrics(
   let stuck = 0;
 
   for (const c of classifications) {
-    if (c.underlyingFlags.includes('GONE_DARK') || c.primaryCategory === 'GONE_DARK') {
+    const flags = c.underlyingFlags ?? [];
+    if (flags.includes('GONE_DARK') || c.primaryCategory === 'GONE_DARK') {
       goneDark += 1;
     }
     if (
-      c.underlyingFlags.includes('NOT_PICKING_UP') ||
+      flags.includes('NOT_PICKING_UP') ||
       c.primaryCategory === 'NOT_PICKING_UP'
     ) {
       notPickingUp += 1;
     }
-    if (
-      c.underlyingFlags.includes('MISMARKED_NI') ||
-      c.primaryCategory === 'MISMARKED_NI'
-    ) {
+    if (flags.includes('MISMARKED_NI') || c.primaryCategory === 'MISMARKED_NI') {
       mismarkedNi += 1;
     }
-    if (c.underlyingFlags.includes('STUCK') || c.primaryCategory === 'STUCK') {
+    if (flags.includes('STUCK') || c.primaryCategory === 'STUCK') {
       stuck += 1;
     }
   }
