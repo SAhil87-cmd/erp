@@ -73,7 +73,6 @@ type ApiJson = {
 
 async function parseJson(res: Response): Promise<ApiJson> {
   const contentType = res.headers.get('content-type') || '';
-  // Sync streams whitespace keepalives before the JSON body — trim them.
   const text = (await res.text()).trim();
   const looksHtml =
     contentType.includes('text/html') ||
@@ -101,6 +100,72 @@ async function parseJson(res: Response): Promise<ApiJson> {
     throw new Error(data.error || `Request failed (${res.status})`);
   }
   return data;
+}
+
+/** Read NDJSON sync stream; keepalives arrive every few seconds so the browser stays connected. */
+async function parseSyncStream(res: Response): Promise<ApiJson> {
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json') && !contentType.includes('ndjson')) {
+    return parseJson(res);
+  }
+
+  if (!res.body) {
+    return parseJson(res);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let lastDone: ApiJson | null = null;
+  let lastError: ApiJson | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const row = JSON.parse(trimmed) as ApiJson & { phase?: string };
+        if (row.phase === 'done' || (row.ok && row.snapshot)) lastDone = row;
+        if (row.ok === false || row.phase === 'error') lastError = row;
+      } catch {
+        // ignore partial/broken lines
+      }
+    }
+  }
+
+  const trailing = buffer.trim();
+  if (trailing) {
+    try {
+      const row = JSON.parse(trailing) as ApiJson & { phase?: string };
+      if (row.phase === 'done' || (row.ok && row.snapshot)) lastDone = row;
+      if (row.ok === false || row.phase === 'error') lastError = row;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (lastError && !lastDone) {
+    throw new Error(
+      (typeof lastError.error === 'string' && lastError.error) ||
+        'Sync failed',
+    );
+  }
+  if (!lastDone) {
+    throw new Error(
+      'Sync ended without dashboard data. Click Retry — first sync can take up to a minute.',
+    );
+  }
+  if (lastDone.ok === false) {
+    throw new Error(
+      (typeof lastDone.error === 'string' && lastDone.error) || 'Sync failed',
+    );
+  }
+  return lastDone;
 }
 
 async function snapshotFromApi(data: ApiJson): Promise<CrmSnapshot | null> {
@@ -220,7 +285,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Accept: 'application/json',
+            Accept: 'application/x-ndjson, application/json',
           },
           cache: 'no-store',
           signal: controller.signal,
@@ -230,6 +295,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
             includeSnapshot: true,
             // Small boot pack — full lead rows are loaded when opening lead tabs.
             pack: 'overview',
+            stream: true,
           }),
         });
       } finally {
@@ -240,7 +306,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
           `Server returned an error page (${res.status}). Click Retry — first sync can take up to a minute.`,
         );
       }
-      const data = await parseJson(res);
+      const data = await parseSyncStream(res);
       const snapshot = await snapshotFromApi(data);
       if (!snapshot) {
         set({
