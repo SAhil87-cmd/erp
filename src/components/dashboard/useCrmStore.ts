@@ -278,7 +278,8 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 180_000);
+      // Headers/first NDJSON line should arrive quickly; body may stream for minutes.
+      const timer = setTimeout(() => controller.abort(), 300_000);
       let res: Response;
       try {
         res = await fetch('/api/crm/sync', {

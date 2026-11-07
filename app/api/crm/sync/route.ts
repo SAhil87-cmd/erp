@@ -108,8 +108,10 @@ export async function POST(req: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      // Pad lines so Vercel/CDN proxy buffers flush to the browser during long sync.
+      const pad = ' '.repeat(2048);
       const send = (obj: unknown) => {
-        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}\n`));
+        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}${pad}\n`));
       };
       const heartbeat = setInterval(() => {
         try {
@@ -117,7 +119,7 @@ export async function POST(req: NextRequest) {
         } catch {
           // stream closed
         }
-      }, 5000);
+      }, 3000);
 
       try {
         send({ ok: true, phase: 'syncing-sheet' });
