@@ -1,10 +1,17 @@
 /**
  * Central classification engine — evaluates all rules and picks primary category.
+ *
+ * Official priority:
+ * 1. Terminal exclusions (Sales Closed / DND / Spam / genuine NI)
+ * 2. Gone Dark
+ * 3. Very High Intent
+ * 4. High Intent
+ * 5. Other classifications (Not Picking Up, Mismarked NI, Stuck)
  */
 
 import {
   DEFAULT_CLASSIFICATION_CONFIG,
-  OPS_EXCLUSION_CATEGORIES,
+  INTENT_OVERRIDE_CATEGORIES,
   TERMINAL_EXCLUSION_STAGES,
   type ClassificationConfig,
 } from './config';
@@ -24,6 +31,7 @@ import type {
   ClassificationResult,
   IntelligenceCategory,
   RuleEvaluationResult,
+  StageHistoryEntry,
 } from '../types';
 
 export interface ClassifyLeadInput {
@@ -31,25 +39,24 @@ export interface ClassifyLeadInput {
   salesProcessId: string;
   currentStage: CanonicalStage;
   stageEnteredAt: string | null;
+  stageHistory?: StageHistoryEntry[] | null;
   calls: CallRecord[] | null | undefined;
   config?: ClassificationConfig;
 }
 
-const OPS_PRIORITY: IntelligenceCategory[] = [
+/** Official primary-category order (exclusive — one primary only). */
+const PRIMARY_PRIORITY: IntelligenceCategory[] = [
   'GONE_DARK',
+  'VERY_HIGH_INTENT',
+  'HIGH_INTENT',
   'NOT_PICKING_UP',
   'MISMARKED_NI',
   'STUCK',
 ];
 
-const OPPORTUNITY_PRIORITY: IntelligenceCategory[] = [
-  'VERY_HIGH_INTENT',
-  'HIGH_INTENT',
-];
-
 const RECOMMENDED_ACTIONS: Record<IntelligenceCategory, string> = {
   GONE_DARK:
-    'Immediate recovery outreach — customer went silent after a late-stage milestone. Assign senior executive for multi-channel contact within 24h.',
+    'Immediate recovery outreach — customer went silent after a completed site visit. Assign senior executive for multi-channel contact within 24h.',
   NOT_PICKING_UP:
     'Change contact strategy — try alternate numbers/times, WhatsApp, or CP mediation. Do not keep dialing the same pattern.',
   MISMARKED_NI:
@@ -57,21 +64,18 @@ const RECOMMENDED_ACTIONS: Record<IntelligenceCategory, string> = {
   STUCK:
     'Unblock the deal — stage has answered engagement but no progression. Manager review of objections, pricing, and next commitment.',
   VERY_HIGH_INTENT:
-    'Prioritize for booking — post-revisit engagement is strong. Push for token/booking conversation this week.',
+    'Prioritize for booking — two or more completed site visits. Push for token/booking conversation this week.',
   HIGH_INTENT:
-    'Accelerate decision — post site-visit engagement is healthy. Schedule revisit or close commercial gaps.',
+    'Accelerate decision — at least one completed site visit. Schedule revisit or close commercial gaps.',
   NONE: 'Continue standard follow-up cadence.',
 };
-
-function isOpsFlag(cat: IntelligenceCategory): boolean {
-  return (OPS_EXCLUSION_CATEGORIES as readonly string[]).includes(cat);
-}
 
 export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
   const config = input.config ?? DEFAULT_CLASSIFICATION_CONFIG;
   const ruleInput: RuleInput = {
     currentStage: input.currentStage,
     stageEnteredAt: input.stageEnteredAt,
+    stageHistory: input.stageHistory,
     calls: input.calls,
     config,
   };
@@ -116,23 +120,24 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
   if (mismarkedNi.flagged) underlyingFlags.push('MISMARKED_NI');
   if (stuck.flagged) underlyingFlags.push('STUCK');
 
-  // Opportunity flags — apply exclusions
-  const opsActive = underlyingFlags.some(isOpsFlag);
   const terminal = TERMINAL_EXCLUSION_STAGES.includes(input.currentStage);
+  const goneDarkActive = goneDark.flagged;
 
-  let vhiFlagged = veryHighIntent.flagged;
-  let hiFlagged = highIntent.flagged;
+  // Intent flags: full ruleResults always retained above for audit.
+  // Do not count HI/VHI alongside Gone Dark or terminal exclusions.
+  let vhiFlagged = veryHighIntent.flagged && !terminal && !goneDarkActive;
+  let hiFlagged = highIntent.flagged && !terminal && !goneDarkActive;
 
-  if (opsActive || terminal) {
-    vhiFlagged = false;
+  // Very High Intent supersedes High Intent when both would apply.
+  if (vhiFlagged) {
     hiFlagged = false;
   }
 
-  // Also exclude HI/VHI when Sales Closed / NI / Spam / DND even if somehow flagged
   if (vhiFlagged) underlyingFlags.push('VERY_HIGH_INTENT');
   if (hiFlagged) underlyingFlags.push('HIGH_INTENT');
 
-  // Collect insufficient call data
+  void INTENT_OVERRIDE_CATEGORIES;
+
   const allResults: RuleEvaluationResult[] = [
     goneDark,
     notPickingUp,
@@ -142,64 +147,34 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
     highIntent,
   ];
   const missingFields = new Set<string>();
-  let anyInsufficient = false;
   for (const r of allResults) {
     if (r.insufficientCallData) {
-      anyInsufficient = true;
       for (const f of r.missingFields ?? []) missingFields.add(f);
     }
   }
 
-  // Primary category: prefer ops alerts, then opportunities
   let primaryCategory: IntelligenceCategory = 'NONE';
-  for (const cat of OPS_PRIORITY) {
+  for (const cat of PRIMARY_PRIORITY) {
     if (underlyingFlags.includes(cat)) {
       primaryCategory = cat;
       break;
     }
   }
-  if (primaryCategory === 'NONE') {
-    for (const cat of OPPORTUNITY_PRIORITY) {
-      if (underlyingFlags.includes(cat)) {
-        primaryCategory = cat;
-        break;
-      }
-    }
-  }
 
-  const callDataStatus: CallDataStatus =
-    anyInsufficient && underlyingFlags.length === 0 && primaryCategory === 'NONE'
-      ? 'INSUFFICIENT_CALL_DATA'
-      : anyInsufficient &&
-          !input.calls?.length &&
-          // Rules that needed calls couldn't run
-          (['Site Visit Scheduled', 'Site Visit Done', 'Revisit Done', 'Interested', 'Cold', 'Followup', 'Cold Followup', 'Not Interested'] as CanonicalStage[]).includes(
-            input.currentStage,
-          )
-        ? 'INSUFFICIENT_CALL_DATA'
-        : 'OK';
-
-  // More precise: if any applicable rule returned insufficient and we have no flags
+  const completedVisitCount = Number(goneDark.evidence.completedVisitCount ?? 0);
   const applicableInsufficient =
-    (goneDark.insufficientCallData &&
-      config.goneDark.qualifyingStages.includes(input.currentStage)) ||
+    (goneDark.insufficientCallData && completedVisitCount >= 1) ||
     (notPickingUp.insufficientCallData &&
       config.notPickingUp.qualifyingStages.includes(input.currentStage)) ||
     (mismarkedNi.insufficientCallData &&
       input.currentStage === 'Not Interested') ||
     (stuck.insufficientCallData &&
-      config.stuck.qualifyingStages.includes(input.currentStage)) ||
-    (veryHighIntent.insufficientCallData &&
-      config.veryHighIntent.qualifyingStages.includes(input.currentStage)) ||
-    (highIntent.insufficientCallData &&
-      config.highIntent.qualifyingStages.includes(input.currentStage));
+      config.stuck.qualifyingStages.includes(input.currentStage));
 
   const finalCallDataStatus: CallDataStatus =
-    applicableInsufficient && underlyingFlags.length === 0
+    Boolean(applicableInsufficient) && underlyingFlags.length === 0
       ? 'INSUFFICIENT_CALL_DATA'
-      : callDataStatus === 'INSUFFICIENT_CALL_DATA' && underlyingFlags.length === 0
-        ? 'INSUFFICIENT_CALL_DATA'
-        : 'OK';
+      : 'OK';
 
   return {
     customerId: input.customerId,
@@ -223,11 +198,11 @@ export function classifyAllProcesses(
     salesProcessId: string;
     currentStage: CanonicalStage;
     stageEnteredAt: string | null;
+    stageHistory?: StageHistoryEntry[] | null;
   }>,
   calls: CallRecord[],
   config?: ClassificationConfig,
 ): ClassificationResult[] {
-  // Index once — never filter the full call list per process (O(P×C) hang on large sheets).
   const byCustomer = new Map<string, CallRecord[]>();
   for (const call of calls) {
     const key = call.customerId || '';
@@ -250,6 +225,7 @@ export function classifyAllProcesses(
       salesProcessId: p.salesProcessId,
       currentStage: p.currentStage,
       stageEnteredAt: p.stageEnteredAt,
+      stageHistory: p.stageHistory,
       calls: effective,
       config,
     });

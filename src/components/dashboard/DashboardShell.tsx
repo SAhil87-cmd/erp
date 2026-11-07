@@ -62,7 +62,7 @@ function ActiveView() {
         <CategoryLeadView
           category="VERY_HIGH_INTENT"
           title="Very High Intent"
-          description="Revisit Done with strong answered-call evidence."
+          description="Two or more verified completed site visits."
         />
       );
     case 'high-intent':
@@ -70,7 +70,7 @@ function ActiveView() {
         <CategoryLeadView
           category="HIGH_INTENT"
           title="High Intent"
-          description="Site Visit Done with strong answered-call evidence."
+          description="At least one verified completed site visit."
         />
       );
     case 'all-leads':

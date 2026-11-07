@@ -379,11 +379,15 @@ export function computeBookingForecast(
       reasons.push(`Excluded: current stage is ${cls.currentStage}`);
     } else if (cls.primaryCategory === 'VERY_HIGH_INTENT') {
       tier = 'HOT';
-      reasons.push('Primary category VERY_HIGH_INTENT (Revisit Done + ≥2 answered dates)');
+      reasons.push(
+        'Primary category VERY_HIGH_INTENT (≥2 verified completed site visits)',
+      );
       reasons.push(cls.reasons.VERY_HIGH_INTENT ?? '');
     } else if (cls.primaryCategory === 'HIGH_INTENT') {
       tier = 'WARM';
-      reasons.push('Primary category HIGH_INTENT (Site Visit Done + ≥2 answered dates)');
+      reasons.push(
+        'Primary category HIGH_INTENT (≥1 verified completed site visit)',
+      );
       reasons.push(cls.reasons.HIGH_INTENT ?? '');
     } else if (
       cls.underlyingFlags.includes('STUCK') &&

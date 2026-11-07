@@ -1,7 +1,7 @@
 export {
   DEFAULT_CLASSIFICATION_CONFIG,
   TERMINAL_EXCLUSION_STAGES,
-  OPS_EXCLUSION_CATEGORIES,
+  INTENT_OVERRIDE_CATEGORIES,
   normalizeStage,
   type ClassificationConfig,
 } from './config';
@@ -15,6 +15,12 @@ export {
   hasAnsweredCall,
   isCallDataMissing,
 } from './helpers';
+
+export {
+  summarizeCompletedSiteVisits,
+  COMPLETED_VISIT_STAGES,
+  type CompletedVisitSummary,
+} from './visits';
 
 export {
   evaluateGoneDark,

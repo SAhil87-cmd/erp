@@ -3,7 +3,7 @@
  */
 
 import type { ClassificationConfig } from './config';
-import { DEFAULT_CLASSIFICATION_CONFIG } from './config';
+import { DEFAULT_CLASSIFICATION_CONFIG, TERMINAL_EXCLUSION_STAGES } from './config';
 import {
   answeredDistinctDates,
   callsAfter,
@@ -12,16 +12,19 @@ import {
   isCallDataMissing,
   longestAnsweredDuration,
 } from './helpers';
+import { summarizeCompletedSiteVisits } from './visits';
 import type {
   CallRecord,
   CanonicalStage,
   RuleEvaluationResult,
+  StageHistoryEntry,
 } from '../types';
 
 export interface RuleInput {
   currentStage: CanonicalStage;
   stageEnteredAt: string | null;
   calls: CallRecord[] | null | undefined;
+  stageHistory?: StageHistoryEntry[] | null;
   config?: ClassificationConfig;
 }
 
@@ -60,44 +63,60 @@ function stuckReason(stage: CanonicalStage): string {
   }
 }
 
+function isTerminalStage(stage: CanonicalStage): boolean {
+  return TERMINAL_EXCLUSION_STAGES.includes(stage);
+}
+
 /**
- * GONE DARK: Site Visit Scheduled | Site Visit Done | Revisit Done;
- * >=2 consecutive unanswered distinct dates AFTER stage entry; answered resets.
+ * GONE DARK (official override):
+ * - Requires at least one verified completed site visit (not merely scheduled).
+ * - After the latest completed visit, ≥2 consecutive unanswered calls on different dates.
+ * - An answered call resets the unanswered sequence.
+ * - Applies after one visit or multiple visits.
  */
 export function evaluateGoneDark(input: RuleInput): RuleEvaluationResult {
   const config = cfg(input);
-  const { qualifyingStages, minUnansweredDates } = config.goneDark;
+  const { minUnansweredDates } = config.goneDark;
+  const visits = summarizeCompletedSiteVisits(input);
 
-  if (!qualifyingStages.includes(input.currentStage)) {
+  if (visits.count < 1) {
     return {
       flagged: false,
-      reason: `Stage ${input.currentStage} is not a Gone Dark qualifying stage`,
-      evidence: { currentStage: input.currentStage, qualifyingStages },
+      reason:
+        'Gone Dark requires at least one verified completed site visit (Site Visit Done / Revisit Done)',
+      evidence: {
+        currentStage: input.currentStage,
+        completedVisitCount: visits.count,
+        completedVisitStages: visits.stages,
+      },
     };
   }
 
   if (isCallDataMissing(input.calls)) {
     return insufficient(
       ['calls'],
-      'Gone Dark requires call history after stage entry; no call records available',
+      'Gone Dark requires call history after the latest completed site visit; no call records available',
     );
   }
 
-  const post = callsAfter(input.calls!, input.stageEnteredAt);
+  const cutoff = visits.latestVisitAt ?? input.stageEnteredAt;
+  const post = callsAfter(input.calls!, cutoff);
   const streak = consecutiveUnansweredDistinctDates(post);
   const flagged = streak >= minUnansweredDates;
 
   return {
     flagged,
     reason: flagged
-      ? `${streak} consecutive unanswered distinct dates after ${input.currentStage} (threshold ${minUnansweredDates})`
-      : `Only ${streak} consecutive unanswered distinct dates (need ${minUnansweredDates})`,
+      ? `${streak} consecutive unanswered distinct dates after latest completed site visit (threshold ${minUnansweredDates})`
+      : `Only ${streak} consecutive unanswered distinct dates after latest completed visit (need ${minUnansweredDates})`,
     evidence: {
       currentStage: input.currentStage,
-      stageEnteredAt: input.stageEnteredAt,
+      completedVisitCount: visits.count,
+      completedVisitStages: visits.stages,
+      latestVisitAt: cutoff,
       consecutiveUnansweredDates: streak,
       minUnansweredDates,
-      postStageCallCount: post.length,
+      postVisitCallCount: post.length,
     },
   };
 }
@@ -249,83 +268,75 @@ export function evaluateStuck(input: RuleInput): RuleEvaluationResult {
 }
 
 /**
- * VERY HIGH INTENT: Revisit Done + >=2 answered distinct dates after revisit.
+ * VERY HIGH INTENT (official): ≥2 verified completed site visits.
+ * No answered-call requirement after the visit.
+ * Terminal stages (Sales Closed / NI / Spam / DND) are excluded by the engine.
  */
 export function evaluateVeryHighIntent(input: RuleInput): RuleEvaluationResult {
   const config = cfg(input);
-  const { qualifyingStages, minAnsweredDates } = config.veryHighIntent;
+  const minVisits = config.veryHighIntent.minCompletedVisits;
+  const visits = summarizeCompletedSiteVisits(input);
 
-  if (!qualifyingStages.includes(input.currentStage)) {
+  if (isTerminalStage(input.currentStage)) {
     return {
       flagged: false,
-      reason: 'Very High Intent requires stage Revisit Done',
-      evidence: { currentStage: input.currentStage },
+      reason: `Very High Intent excluded for terminal stage ${input.currentStage}`,
+      evidence: {
+        currentStage: input.currentStage,
+        completedVisitCount: visits.count,
+      },
     };
   }
 
-  if (isCallDataMissing(input.calls)) {
-    return insufficient(
-      ['calls'],
-      'Very High Intent requires call history after Revisit Done; none available',
-    );
-  }
-
-  const post = callsAfter(input.calls!, input.stageEnteredAt);
-  const answeredDates = answeredDistinctDates(post);
-  const flagged = answeredDates.length >= minAnsweredDates;
-
+  const flagged = visits.count >= minVisits;
   return {
     flagged,
     reason: flagged
-      ? `Revisit Done with ${answeredDates.length} answered distinct dates — Very High Intent`
-      : `Only ${answeredDates.length} answered distinct dates after Revisit Done (need ${minAnsweredDates})`,
+      ? `${visits.count} verified completed site visits — Very High Intent`
+      : `Only ${visits.count} verified completed site visit(s) (need ${minVisits})`,
     evidence: {
       currentStage: input.currentStage,
-      stageEnteredAt: input.stageEnteredAt,
-      answeredDistinctDates: answeredDates,
-      answeredDistinctDateCount: answeredDates.length,
-      minAnsweredDates,
+      completedVisitCount: visits.count,
+      completedVisitStages: visits.stages,
+      latestVisitAt: visits.latestVisitAt,
+      minCompletedVisits: minVisits,
     },
   };
 }
 
 /**
- * HIGH INTENT: Site Visit Done + >=2 answered distinct dates after SV Done.
+ * HIGH INTENT (official): ≥1 verified completed site visit.
+ * No answered-call requirement after the visit.
+ * Terminal stages excluded by the engine.
  */
 export function evaluateHighIntent(input: RuleInput): RuleEvaluationResult {
   const config = cfg(input);
-  const { qualifyingStages, minAnsweredDates } = config.highIntent;
+  const minVisits = config.highIntent.minCompletedVisits;
+  const visits = summarizeCompletedSiteVisits(input);
 
-  if (!qualifyingStages.includes(input.currentStage)) {
+  if (isTerminalStage(input.currentStage)) {
     return {
       flagged: false,
-      reason: 'High Intent requires stage Site Visit Done',
-      evidence: { currentStage: input.currentStage },
+      reason: `High Intent excluded for terminal stage ${input.currentStage}`,
+      evidence: {
+        currentStage: input.currentStage,
+        completedVisitCount: visits.count,
+      },
     };
   }
 
-  if (isCallDataMissing(input.calls)) {
-    return insufficient(
-      ['calls'],
-      'High Intent requires call history after Site Visit Done; none available',
-    );
-  }
-
-  const post = callsAfter(input.calls!, input.stageEnteredAt);
-  const answeredDates = answeredDistinctDates(post);
-  const flagged = answeredDates.length >= minAnsweredDates;
-
+  const flagged = visits.count >= minVisits;
   return {
     flagged,
     reason: flagged
-      ? `Site Visit Done with ${answeredDates.length} answered distinct dates — High Intent`
-      : `Only ${answeredDates.length} answered distinct dates after Site Visit Done (need ${minAnsweredDates})`,
+      ? `${visits.count} verified completed site visit(s) — High Intent`
+      : `Only ${visits.count} verified completed site visit(s) (need ${minVisits})`,
     evidence: {
       currentStage: input.currentStage,
-      stageEnteredAt: input.stageEnteredAt,
-      answeredDistinctDates: answeredDates,
-      answeredDistinctDateCount: answeredDates.length,
-      minAnsweredDates,
+      completedVisitCount: visits.count,
+      completedVisitStages: visits.stages,
+      latestVisitAt: visits.latestVisitAt,
+      minCompletedVisits: minVisits,
     },
   };
 }

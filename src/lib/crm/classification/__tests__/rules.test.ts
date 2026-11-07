@@ -276,9 +276,9 @@ describe('call helpers', () => {
 describe('GONE DARK', () => {
   const stageEnteredAt = iso(2026, 1, 5);
 
-  it('flags >=2 consecutive unanswered distinct dates after SV Scheduled', () => {
+  it('flags >=2 consecutive unanswered distinct dates after completed site visit', () => {
     const result = evaluateGoneDark({
-      currentStage: 'Site Visit Scheduled',
+      currentStage: 'Site Visit Done',
       stageEnteredAt,
       calls: [
         call({ callAt: iso(2026, 1, 6), answered: true }),
@@ -310,6 +310,19 @@ describe('GONE DARK', () => {
     ).toBe(true);
   });
 
+  it('does not flag Site Visit Scheduled (visit not completed)', () => {
+    expect(
+      evaluateGoneDark({
+        currentStage: 'Site Visit Scheduled',
+        stageEnteredAt,
+        calls: [
+          call({ callAt: iso(2026, 1, 20), answered: false }),
+          call({ callAt: iso(2026, 1, 21), answered: false }),
+        ],
+      }).flagged,
+    ).toBe(false);
+  });
+
   it('does not flag Interested stage', () => {
     expect(
       evaluateGoneDark({
@@ -325,7 +338,7 @@ describe('GONE DARK', () => {
 
   it('answered resets streak below threshold', () => {
     const result = evaluateGoneDark({
-      currentStage: 'Site Visit Scheduled',
+      currentStage: 'Site Visit Done',
       stageEnteredAt,
       calls: [
         call({ callAt: iso(2026, 1, 20), answered: false }),
@@ -336,9 +349,18 @@ describe('GONE DARK', () => {
     expect(result.flagged).toBe(false);
   });
 
-  it('returns INSUFFICIENT when no calls', () => {
+  it('one unanswered after visit is not Gone Dark', () => {
     const result = evaluateGoneDark({
-      currentStage: 'Site Visit Scheduled',
+      currentStage: 'Revisit Done',
+      stageEnteredAt,
+      calls: [call({ callAt: iso(2026, 1, 20), answered: false })],
+    });
+    expect(result.flagged).toBe(false);
+  });
+
+  it('returns INSUFFICIENT when completed visit has no calls', () => {
+    const result = evaluateGoneDark({
+      currentStage: 'Site Visit Done',
       stageEnteredAt,
       calls: [],
     });
@@ -536,58 +558,50 @@ describe('STUCK', () => {
 });
 
 describe('VERY HIGH INTENT', () => {
-  it('flags Revisit Done with >=2 answered distinct dates', () => {
+  it('flags Revisit Done immediately without answered-call requirement', () => {
     const result = evaluateVeryHighIntent({
       currentStage: 'Revisit Done',
       stageEnteredAt: iso(2026, 1, 20),
-      calls: [
-        call({ callAt: iso(2026, 1, 21), answered: true }),
-        call({ callAt: iso(2026, 1, 23), answered: true }),
-      ],
+      calls: [],
     });
     expect(result.flagged).toBe(true);
+    expect(result.evidence.completedVisitCount).toBe(2);
   });
 
-  it('does not flag other stages', () => {
+  it('does not flag single Site Visit Done', () => {
     expect(
       evaluateVeryHighIntent({
         currentStage: 'Site Visit Done',
         stageEnteredAt: iso(2026, 1, 20),
-        calls: [
-          call({ callAt: iso(2026, 1, 21), answered: true }),
-          call({ callAt: iso(2026, 1, 23), answered: true }),
-        ],
+        calls: [],
       }).flagged,
     ).toBe(false);
   });
 });
 
 describe('HIGH INTENT', () => {
-  it('flags Site Visit Done with >=2 answered distinct dates', () => {
-    const result = evaluateHighIntent({
-      currentStage: 'Site Visit Done',
-      stageEnteredAt: iso(2026, 1, 22),
-      calls: [
-        call({ callAt: iso(2026, 1, 23), answered: true }),
-        call({ callAt: iso(2026, 1, 25), answered: true }),
-      ],
-    });
-    expect(result.flagged).toBe(true);
-  });
-
-  it('insufficient without calls', () => {
+  it('flags Site Visit Done immediately without answered-call requirement', () => {
     const result = evaluateHighIntent({
       currentStage: 'Site Visit Done',
       stageEnteredAt: iso(2026, 1, 22),
       calls: [],
     });
-    expect(result.insufficientCallData).toBe(true);
+    expect(result.flagged).toBe(true);
+    expect(result.evidence.completedVisitCount).toBe(1);
+  });
+
+  it('does not flag Site Visit Scheduled', () => {
+    const result = evaluateHighIntent({
+      currentStage: 'Site Visit Scheduled',
+      stageEnteredAt: iso(2026, 1, 22),
+      calls: [],
+    });
     expect(result.flagged).toBe(false);
   });
 });
 
 describe('classifyLead engine — priority & exclusions', () => {
-  it('prefers GONE_DARK over STUCK when both flag', () => {
+  it('prefers GONE_DARK over VERY_HIGH_INTENT and STUCK', () => {
     // Revisit Done + 3 answered dates (stuck) + 2 trailing unanswered (gone dark)
     const result = classifyLead({
       customerId: 'X',
@@ -605,11 +619,14 @@ describe('classifyLead engine — priority & exclusions', () => {
     expect(result.underlyingFlags).toContain('GONE_DARK');
     expect(result.underlyingFlags).toContain('STUCK');
     expect(result.primaryCategory).toBe('GONE_DARK');
-    // VHI excluded due to ops flags
+    // Intent not counted alongside Gone Dark
     expect(result.underlyingFlags).not.toContain('VERY_HIGH_INTENT');
+    expect(result.underlyingFlags).not.toContain('HIGH_INTENT');
+    // Full audit trail retained in ruleResults
+    expect(result.ruleResults.VERY_HIGH_INTENT.flagged).toBe(true);
   });
 
-  it('excludes HIGH INTENT when Stuck', () => {
+  it('prefers HIGH_INTENT over Stuck after a completed site visit', () => {
     const result = classifyLead({
       customerId: 'X',
       salesProcessId: 'X::p',
@@ -622,8 +639,8 @@ describe('classifyLead engine — priority & exclusions', () => {
       ],
     });
     expect(result.underlyingFlags).toContain('STUCK');
-    expect(result.underlyingFlags).not.toContain('HIGH_INTENT');
-    expect(result.primaryCategory).toBe('STUCK');
+    expect(result.underlyingFlags).toContain('HIGH_INTENT');
+    expect(result.primaryCategory).toBe('HIGH_INTENT');
   });
 
   it('excludes opportunity categories for Sales Closed / NI / Spam / DND', () => {
@@ -649,10 +666,7 @@ describe('classifyLead engine — priority & exclusions', () => {
       salesProcessId: 'p',
       currentStage: 'Revisit Done',
       stageEnteredAt: iso(2026, 1, 20),
-      calls: [
-        call({ callAt: iso(2026, 1, 21), answered: true }),
-        call({ callAt: iso(2026, 1, 23), answered: true }),
-      ],
+      calls: [],
     });
     expect(result.primaryCategory).toBe('VERY_HIGH_INTENT');
     expect(result.callDataStatus).toBe('OK');
@@ -664,15 +678,28 @@ describe('classifyLead engine — priority & exclusions', () => {
       salesProcessId: 'p',
       currentStage: 'Site Visit Done',
       stageEnteredAt: iso(2026, 1, 22),
-      calls: [
-        call({ callAt: iso(2026, 1, 23), answered: true }),
-        call({ callAt: iso(2026, 1, 25), answered: true }),
-      ],
+      calls: [],
     });
     expect(result.primaryCategory).toBe('HIGH_INTENT');
   });
 
-  it('sets INSUFFICIENT_CALL_DATA when qualifying stage has no calls', () => {
+  it('recalculates to intent after answered call clears Gone Dark', () => {
+    const result = classifyLead({
+      customerId: 'X',
+      salesProcessId: 'p',
+      currentStage: 'Site Visit Done',
+      stageEnteredAt: iso(2026, 1, 5),
+      calls: [
+        call({ callAt: iso(2026, 1, 20), answered: false }),
+        call({ callAt: iso(2026, 1, 21), answered: false }),
+        call({ callAt: iso(2026, 1, 22), answered: true }),
+      ],
+    });
+    expect(result.primaryCategory).toBe('HIGH_INTENT');
+    expect(result.underlyingFlags).not.toContain('GONE_DARK');
+  });
+
+  it('sets INSUFFICIENT_CALL_DATA when stuck-qualifying stage has no calls', () => {
     const result = classifyLead({
       customerId: 'X',
       salesProcessId: 'p',

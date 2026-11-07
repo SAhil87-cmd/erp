@@ -280,6 +280,7 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
       salesProcessId: p.salesProcessId,
       currentStage: p.currentStage,
       stageEnteredAt: p.stageEnteredAt,
+      stageHistory: p.stageHistory,
     })),
     calls,
   );

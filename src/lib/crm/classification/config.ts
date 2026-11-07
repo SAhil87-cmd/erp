@@ -8,7 +8,8 @@ import type { CanonicalStage } from '../types';
 export interface ClassificationConfig {
   goneDark: {
     minUnansweredDates: number;
-    qualifyingStages: CanonicalStage[];
+    /** Gone Dark only after a verified completed site visit (not scheduled). */
+    requireCompletedSiteVisit: boolean;
   };
   notPickingUp: {
     minUnansweredDates: number;
@@ -22,23 +23,19 @@ export interface ClassificationConfig {
     qualifyingStages: CanonicalStage[];
   };
   veryHighIntent: {
-    minAnsweredDates: number;
-    qualifyingStages: CanonicalStage[];
+    /** Minimum verified completed site visits (Revisit Done path = 2). */
+    minCompletedVisits: number;
   };
   highIntent: {
-    minAnsweredDates: number;
-    qualifyingStages: CanonicalStage[];
+    /** Minimum verified completed site visits (Site Visit Done = 1). */
+    minCompletedVisits: number;
   };
 }
 
 export const DEFAULT_CLASSIFICATION_CONFIG: ClassificationConfig = {
   goneDark: {
     minUnansweredDates: 2,
-    qualifyingStages: [
-      'Site Visit Scheduled',
-      'Site Visit Done',
-      'Revisit Done',
-    ],
+    requireCompletedSiteVisit: true,
   },
   notPickingUp: {
     minUnansweredDates: 3,
@@ -60,12 +57,10 @@ export const DEFAULT_CLASSIFICATION_CONFIG: ClassificationConfig = {
     ],
   },
   veryHighIntent: {
-    minAnsweredDates: 2,
-    qualifyingStages: ['Revisit Done'],
+    minCompletedVisits: 2,
   },
   highIntent: {
-    minAnsweredDates: 2,
-    qualifyingStages: ['Site Visit Done'],
+    minCompletedVisits: 1,
   },
 };
 
@@ -80,10 +75,8 @@ export const TERMINAL_EXCLUSION_STAGES: CanonicalStage[] = [
   'DND',
 ];
 
-/** Ops alert categories that exclude HIGH / VERY HIGH INTENT. */
-export const OPS_EXCLUSION_CATEGORIES = [
-  'GONE_DARK',
-  'NOT_PICKING_UP',
-  'MISMARKED_NI',
-  'STUCK',
-] as const;
+/**
+ * Categories that suppress High / Very High Intent from simultaneous counting.
+ * Official order: Gone Dark overrides intent; other ops do not.
+ */
+export const INTENT_OVERRIDE_CATEGORIES = ['GONE_DARK'] as const;
