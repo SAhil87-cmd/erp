@@ -6,7 +6,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
-import { classifyAllProcesses } from './classification/engine';
+import { classifyAllProcessesAsync } from './classification/engine';
 import { calendarDateKey } from './dates';
 import { buildProcessIdsByInteractionDay } from './dateIndex';
 import { buildRelationalModel } from './normalize';
@@ -330,7 +330,7 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     model.interactions = [];
   }
 
-  const engineClassifications = classifyAllProcesses(
+  const engineClassifications = await classifyAllProcessesAsync(
     model.processes.map((p) => ({
       customerId: p.customerId,
       salesProcessId: p.salesProcessId,

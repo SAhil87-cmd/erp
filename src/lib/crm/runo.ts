@@ -7,6 +7,7 @@ import Papa from 'papaparse';
 import { parseFlexibleDate, toKolkataIso } from './dates';
 import { normalizePhone } from './normalize';
 import type { CallOutcome, CallRecord, RawSheetRow } from './types';
+import { yieldEventLoop } from './yield';
 
 /**
  * Stable customer key for call ↔ CRM linking.
@@ -242,6 +243,241 @@ export function importCallsFromCsv(csvText: string): {
   });
 
   return { calls, errors };
+}
+
+/**
+ * One-pass published call-sheet import that yields the event loop so NDJSON
+ * heartbeats can flush during large Papa parses on Vercel.
+ */
+export async function importPublishedCallSheetAsync(csvText: string): Promise<{
+  calls: CallRecord[];
+  errors: string[];
+  derivedRows: RawSheetRow[];
+}> {
+  type Agg = {
+    customerId: string;
+    name: string;
+    phone: string;
+    processName: string;
+    assignedTo: string;
+    status: string;
+    earliestAt: string;
+    latestAt: string;
+    statusEnteredAt: string;
+  };
+
+  const calls: CallRecord[] = [];
+  const errors: string[] = [];
+  const byKey = new Map<string, Agg>();
+  const statusFirst = new Map<string, string>();
+  let idx = 0;
+  let sinceYield = 0;
+
+  await new Promise<void>((resolve, reject) => {
+    Papa.parse<Record<string, string>>(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (h) => h.trim(),
+      step: (result, parser) => {
+        const row = result.data;
+        if (!row || typeof row !== 'object') return;
+
+        const rawCustomerId = cell(
+          row,
+          'customerId',
+          'CustomerId',
+          'Customer Id',
+          'Customer ID',
+        );
+        const phone = cell(row, 'Phone', 'mobileNum', 'Mobile Num', 'phone');
+        const resolved = resolveCallCustomerKey(rawCustomerId, phone);
+        if (!resolved) {
+          errors.push(
+            `Row ${idx}: missing Customer Id and usable Phone — retained with UNKNOWN id`,
+          );
+        } else if (resolved.matchedByPhone) {
+          errors.push(
+            `Row ${idx}: missing Customer Id — linked by phone key ${resolved.key}`,
+          );
+        }
+        const customerId = resolved?.key ?? `UNKNOWN-${idx}`;
+
+        const { answered, callOutcome } = deriveOutcomeFromRunoRow(row);
+        const startRaw = cell(
+          row,
+          'Call Start Date',
+          'callStartDate',
+          'callDate',
+          'CallDate',
+          'callAt',
+          'CallAt',
+        );
+        const callDate = cell(row, 'callDate', 'CallDate') || startRaw;
+        const callTime = cell(row, 'callTime', 'CallTime');
+        let callAt = cell(row, 'callAt', 'CallAt');
+
+        if (!callAt && (startRaw || callDate)) {
+          const combined =
+            callTime && !startRaw.includes(':')
+              ? `${callDate} ${callTime}`
+              : startRaw || callDate;
+          const d = parseFlexibleDate(combined);
+          if (d) {
+            callAt = d.toISOString();
+          } else {
+            const normalized = combined.replace(/,\s+/g, ' ');
+            const m = normalized.match(
+              /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
+            );
+            if (m) {
+              const day = Number(m[1]);
+              const month = Number(m[2]);
+              let year = Number(m[3]);
+              if (year < 100) year += 2000;
+              callAt = toKolkataIso(
+                year,
+                month,
+                day,
+                m[4] != null ? Number(m[4]) : 0,
+                m[5] != null ? Number(m[5]) : 0,
+                m[6] != null ? Number(m[6]) : 0,
+              );
+            } else {
+              errors.push(`Row ${idx}: unparseable callDate "${combined}"`);
+              callAt = combined;
+            }
+          }
+        }
+
+        const durationSeconds = Number(
+          cell(
+            row,
+            'Duration (in Sec)',
+            'durationSeconds',
+            'DurationSeconds',
+            'duration',
+          ) || 0,
+        );
+
+        calls.push({
+          callRecordId:
+            cell(row, 'Call Id', 'callRecordId', 'CallRecordId') ||
+            `CALL-IMPORT-${idx}`,
+          customerId,
+          callAt: callAt || new Date().toISOString(),
+          callDate: callDate || undefined,
+          callTime: callTime || undefined,
+          callOutcome,
+          answered: callOutcome === 'answered' ? true : answered,
+          durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : 0,
+          callExecutive:
+            cell(row, 'Caller Name', 'callExecutive', 'CallExecutive') ||
+            undefined,
+          salesProcessId:
+            cell(row, 'salesProcessId', 'SalesProcessId') || undefined,
+          salesProcessName:
+            cell(row, 'Process Name', 'salesProcessName', 'SalesProcessName') ||
+            undefined,
+        });
+
+        if (resolved && startRaw) {
+          const name = cell(row, 'Name', 'name');
+          const processName = cell(row, 'Process Name', 'processName');
+          const assignedTo = cell(row, 'Caller Name', 'assignedTo');
+          const statusRaw = cell(row, 'Status', 'status');
+          const status = normalizeExportStatus(statusRaw);
+          const key = resolved.key;
+          const prev = byKey.get(key);
+          if (!prev) {
+            byKey.set(key, {
+              customerId: key,
+              name,
+              phone,
+              processName,
+              assignedTo,
+              status,
+              earliestAt: startRaw,
+              latestAt: startRaw,
+              statusEnteredAt: startRaw,
+            });
+          } else {
+            if (isEarlier(startRaw, prev.earliestAt)) prev.earliestAt = startRaw;
+            if (isLater(startRaw, prev.latestAt)) {
+              prev.latestAt = startRaw;
+              if (name) prev.name = name;
+              if (processName) prev.processName = processName;
+              if (assignedTo) prev.assignedTo = assignedTo;
+              if (statusRaw) {
+                if (status !== prev.status) {
+                  prev.status = status;
+                  prev.statusEnteredAt = startRaw;
+                }
+              }
+            } else if (
+              statusRaw &&
+              status === prev.status &&
+              isEarlier(startRaw, prev.statusEnteredAt)
+            ) {
+              prev.statusEnteredAt = startRaw;
+            }
+          }
+
+          const agg = byKey.get(key);
+          if (agg) {
+            const st = normalizeExportStatus(statusRaw);
+            if (st === agg.status) {
+              const prevFirst = statusFirst.get(key);
+              if (!prevFirst || isEarlier(startRaw, prevFirst)) {
+                statusFirst.set(key, startRaw);
+              }
+            }
+          }
+        }
+
+        idx += 1;
+        sinceYield += 1;
+        if (sinceYield >= 1200) {
+          sinceYield = 0;
+          parser.pause();
+          setImmediate(() => parser.resume());
+        }
+      },
+      complete: () => resolve(),
+      error: (err: Error) => reject(err),
+    });
+  });
+
+  await yieldEventLoop();
+
+  const derivedRows: RawSheetRow[] = [...byKey.values()].map((agg, i) => {
+    const sameStatusFirst = statusFirst.get(agg.customerId);
+    const sameStatusOnlyOnLatest =
+      sameStatusFirst &&
+      !isEarlier(sameStatusFirst, agg.latestAt) &&
+      isEarlier(agg.earliestAt, agg.latestAt);
+    const stageEntry = sameStatusOnlyOnLatest
+      ? agg.earliestAt
+      : sameStatusFirst || agg.statusEnteredAt || agg.earliestAt;
+
+    return {
+      _rowIndex: i,
+      interactionDate: stageEntry,
+      customerId: agg.customerId,
+      name: agg.name,
+      mobileNum: agg.phone,
+      assignedTo: agg.assignedTo,
+      processName: agg.processName,
+      status: agg.status,
+      projectName: agg.processName,
+      notes: `Last call: ${agg.latestAt}`,
+      nextFollowUp: agg.latestAt,
+      _flags: sameStatusOnlyOnLatest
+        ? ['DERIVED_FROM_CALL_EXPORT', 'STAGE_ENTRY_ASSUMED_EARLIEST_CALL']
+        : ['DERIVED_FROM_CALL_EXPORT'],
+    };
+  });
+
+  return { calls, errors, derivedRows };
 }
 
 function normalizeExportStatus(statusRaw: string): string {

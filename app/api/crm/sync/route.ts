@@ -106,26 +106,51 @@ export async function POST(req: NextRequest) {
   }
 
   const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      // Pad lines so Vercel/CDN proxy buffers flush to the browser during long sync.
-      const pad = ' '.repeat(2048);
-      const send = (obj: unknown) => {
-        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}${pad}\n`));
-      };
-      const heartbeat = setInterval(() => {
+  // Pad lines so Vercel/CDN proxy buffers flush during long sync.
+  const pad = ' '.repeat(2048);
+
+  async function awaitWithHeartbeats<T>(
+    send: (obj: unknown) => void,
+    phase: string,
+    promise: Promise<T>,
+  ): Promise<T> {
+    const pending = promise.then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+    for (;;) {
+      const winner = await Promise.race([
+        pending,
+        new Promise<'tick'>((resolve) => {
+          setTimeout(() => resolve('tick'), 2000);
+        }),
+      ]);
+      if (winner === 'tick') {
         try {
-          send({ ok: true, phase: 'working', t: Date.now() });
+          send({ ok: true, phase, t: Date.now() });
         } catch {
           // stream closed
         }
-      }, 3000);
+        continue;
+      }
+      if (winner.ok) return winner.value;
+      throw winner.error;
+    }
+  }
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (obj: unknown) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(obj)}${pad}\n`));
+      };
 
       try {
         send({ ok: true, phase: 'syncing-sheet' });
-        const result = await syncFromGoogleSheets({
-          mode: body.mode ?? 'published',
-        });
+        const result = await awaitWithHeartbeats(
+          send,
+          'syncing-sheet',
+          syncFromGoogleSheets({ mode: body.mode ?? 'published' }),
+        );
         const syncMeta = await getSyncStatus();
 
         if (result.status === 'error') {
@@ -148,10 +173,18 @@ export async function POST(req: NextRequest) {
 
         if (body.includeSnapshot !== false) {
           try {
-            const full = await loadSnapshot();
+            const full = await awaitWithHeartbeats(
+              send,
+              'building-dashboard',
+              loadSnapshot(),
+            );
+            // Yield so a heartbeat can flush before heavy JSON/gzip work.
+            await new Promise((r) => setImmediate(r));
+            send({ ok: true, phase: 'packing-dashboard', t: Date.now() });
             const useFull = body.pack === 'full';
             const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
             pack = useFull ? 'full' : 'overview';
+            await new Promise((r) => setImmediate(r));
             snapshot = gzipSync(
               Buffer.from(JSON.stringify(wire, jsonReplacer), 'utf8'),
               { level: 6 },
@@ -183,7 +216,6 @@ export async function POST(req: NextRequest) {
           // ignore
         }
       } finally {
-        clearInterval(heartbeat);
         controller.close();
       }
     },

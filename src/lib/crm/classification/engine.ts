@@ -243,3 +243,51 @@ export function classifyAllProcesses(
     });
   });
 }
+
+/** Async classify with event-loop yields so sync stream heartbeats can flush. */
+export async function classifyAllProcessesAsync(
+  processes: Array<{
+    customerId: string;
+    salesProcessId: string;
+    currentStage: CanonicalStage;
+    stageEnteredAt: string | null;
+    stageHistory?: StageHistoryEntry[] | null;
+  }>,
+  calls: CallRecord[],
+  config?: ClassificationConfig,
+): Promise<ClassificationResult[]> {
+  const byCustomer = new Map<string, CallRecord[]>();
+  for (const call of calls) {
+    const key = call.customerId || '';
+    const list = byCustomer.get(key);
+    if (list) list.push(call);
+    else byCustomer.set(key, [call]);
+  }
+
+  const out: ClassificationResult[] = [];
+  for (let i = 0; i < processes.length; i += 1) {
+    const p = processes[i]!;
+    const customerCalls = byCustomer.get(p.customerId) ?? [];
+    const scoped = customerCalls.filter(
+      (c) =>
+        c.salesProcessId === p.salesProcessId ||
+        (!c.salesProcessId && !c.salesProcessName),
+    );
+    const effective = scoped.length > 0 ? scoped : customerCalls;
+    out.push(
+      classifyLead({
+        customerId: p.customerId,
+        salesProcessId: p.salesProcessId,
+        currentStage: p.currentStage,
+        stageEnteredAt: p.stageEnteredAt,
+        stageHistory: p.stageHistory,
+        calls: effective,
+        config,
+      }),
+    );
+    if (i > 0 && i % 250 === 0) {
+      await new Promise<void>((r) => setImmediate(r));
+    }
+  }
+  return out;
+}

@@ -18,7 +18,9 @@ import { importFromCsv } from './import';
 import {
   deriveCrmRowsFromCallExport,
   importCallsFromCsv,
+  importPublishedCallSheetAsync,
 } from './runo';
+import { yieldEventLoop } from './yield';
 import {
   loadCalls,
   loadRawRows,
@@ -160,11 +162,13 @@ async function doSyncFromPublishedSheet(
     // out on Vercel serverless — derive customers from the call export instead.
     if (!urlOverride) {
       const callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
-      const { calls, errors } = importCallsFromCsv(callsText);
+      await yieldEventLoop();
+      const { calls, errors, derivedRows: derived } =
+        await importPublishedCallSheetAsync(callsText);
+      await yieldEventLoop();
       await saveCalls(calls);
       const callCount = calls.length;
 
-      const derived = deriveCrmRowsFromCallExport(callsText);
       await saveRawRows(derived, 'google_sheets');
       const rowCount = derived.length;
       let message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} customer rows from published call sheet.`;
