@@ -34,14 +34,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Return slim snapshot from THIS serverless instance so the client does not
-    // hit a different empty instance after sync. loadSnapshot() already caches
-    // the slimmed form on Vercel.
+    // Always try to return a slim snapshot from THIS instance. Without it the
+    // next GET /snapshot often hits a different empty Vercel instance (all zeros).
     let snapshot = null;
+    let snapshotError: string | null = null;
     if (body.includeSnapshot !== false) {
       try {
         snapshot = await loadSnapshot();
       } catch (snapErr) {
+        snapshotError =
+          snapErr instanceof Error ? snapErr.message : 'Snapshot build failed';
         console.error('[api/crm/sync] snapshot build failed after sync', snapErr);
       }
     }
@@ -51,6 +53,7 @@ export async function POST(req: NextRequest) {
       result,
       syncMeta,
       snapshot,
+      snapshotError,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Sync failed';

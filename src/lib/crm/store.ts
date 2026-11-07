@@ -8,6 +8,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { classifyAllProcesses } from './classification/engine';
 import { buildRelationalModel } from './normalize';
+import { slimSnapshotForApi } from './slimSnapshot';
 import type {
   CallRecord,
   ClassificationOverride,
@@ -259,7 +260,10 @@ export function applyOverridesToClassifications(
   });
 }
 
-/** Build a full CrmSnapshot from persisted files / memory. */
+/**
+ * Build a dashboard snapshot. On Vercel, skip huge per-customer call id lists and
+ * immediately slim for API so sync responses don't OOM the serverless worker.
+ */
 export async function loadSnapshot(): Promise<CrmSnapshot> {
   if (IS_VERCEL && memory().snapshot) {
     return memory().snapshot!;
@@ -298,37 +302,49 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     }),
   );
 
-  const callIdsByCustomer = new Map<string, string[]>();
-  for (const call of calls) {
-    const list = callIdsByCustomer.get(call.customerId);
-    if (list) list.push(call.callRecordId);
-    else callIdsByCustomer.set(call.customerId, [call.callRecordId]);
-  }
-  for (const customer of model.customers) {
-    customer.callRecordIds = callIdsByCustomer.get(customer.customerId) ?? [];
+  // Avoid allocating tens of thousands of call-id arrays on Vercel (OOM risk).
+  if (!IS_VERCEL) {
+    const callIdsByCustomer = new Map<string, string[]>();
+    for (const call of calls) {
+      const list = callIdsByCustomer.get(call.customerId);
+      if (list) list.push(call.callRecordId);
+      else callIdsByCustomer.set(call.customerId, [call.callRecordId]);
+    }
+    for (const customer of model.customers) {
+      customer.callRecordIds = callIdsByCustomer.get(customer.customerId) ?? [];
+    }
+  } else {
+    for (const customer of model.customers) {
+      customer.callRecordIds = [];
+      customer.interactionIds = [];
+    }
   }
 
   const snapshot: CrmSnapshot = {
     customers: model.customers,
     processes: model.processes,
     interactions: model.interactions,
-    calls,
+    // Don't hang the full 50k+ call array off the object that gets slim-copied.
+    calls: IS_VERCEL ? [] : calls,
     projects: model.projects,
     executives: model.executives,
     followUps: model.followUps,
     classifications,
     reviews,
     overrides,
-    dataHealth: model.dataHealth,
+    dataHealth: {
+      ...model.dataHealth,
+      issues: model.dataHealth.issues.slice(0, 40),
+    },
     syncMeta,
     builtAt: new Date().toISOString(),
   };
 
   if (IS_VERCEL) {
-    // Cache the API-slimmed snapshot so sync/snapshot responses stay small.
-    const { slimSnapshotForApi } = await import('./slimSnapshot');
-    memory().snapshot = slimSnapshotForApi(snapshot);
-    return memory().snapshot!;
+    // Pass calls only into slimmer for today/exec aggregates, then drop the fat copy.
+    const slim = slimSnapshotForApi({ ...snapshot, calls });
+    memory().snapshot = slim;
+    return slim;
   }
 
   return snapshot;

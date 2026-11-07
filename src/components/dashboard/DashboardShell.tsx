@@ -107,16 +107,19 @@ export function DashboardShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Prefer a live sheet sync, but always fall back to snapshot so a timeout
-      // does not leave a blank page.
+      // Always sync on boot. Do NOT fall back to an empty snapshot from another
+      // Vercel instance — that paints a fake all-zero dashboard.
       try {
         await syncSheets();
       } catch {
+        if (cancelled) return;
+        // Keep the error banner; offer one retry after a short pause.
+        await new Promise((r) => setTimeout(r, 1500));
         if (!cancelled) {
           try {
-            await loadSnapshot();
+            await syncSheets();
           } catch {
-            // error banner already set by store helpers
+            // error already set
           }
         }
       }
@@ -124,7 +127,7 @@ export function DashboardShell() {
     return () => {
       cancelled = true;
     };
-  }, [loadSnapshot, syncSheets]);
+  }, [syncSheets]);
 
   const tabLabel = TAB_ITEMS.find((t) => t.id === activeTab)?.label ?? 'Dashboard';
   const lastSyncAt = snapshot?.syncMeta?.lastSyncAt;

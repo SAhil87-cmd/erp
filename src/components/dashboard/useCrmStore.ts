@@ -51,6 +51,7 @@ type ApiJson = {
   ok?: boolean;
   error?: string;
   snapshot?: unknown;
+  snapshotError?: string;
   result?: { message?: string; [key: string]: unknown };
   [key: string]: unknown;
 };
@@ -171,11 +172,20 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
       });
       const data = await parseJson(res);
       // Prefer snapshot from the same serverless instance that just synced.
-      // A follow-up GET /snapshot can hit a different empty instance on Vercel.
+      // A follow-up GET /snapshot often hits a different empty Vercel instance.
       if (data.snapshot) {
-        set({ snapshot: data.snapshot as CrmSnapshot, loading: false });
+        set({ snapshot: data.snapshot as CrmSnapshot, loading: false, error: null });
       } else {
-        await get().loadSnapshot();
+        set({
+          loading: false,
+          error:
+            (typeof data.snapshotError === 'string' && data.snapshotError) ||
+            'Sheet synced but dashboard data was empty. Click Refresh sheet again.',
+        });
+        throw new Error(
+          (typeof data.snapshotError === 'string' && data.snapshotError) ||
+            'Snapshot missing after sync',
+        );
       }
       return (data.result?.message as string) || 'Sync completed';
     } catch (err) {
