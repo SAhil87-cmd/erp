@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
-import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
 import { loadSnapshot } from '@/lib/crm/store';
 
 export const runtime = 'nodejs';
@@ -36,11 +35,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Return slim snapshot from THIS serverless instance so the client does not
-    // hit a different empty instance after sync.
-    const includeSnapshot = body.includeSnapshot !== false;
-    const snapshot = includeSnapshot
-      ? slimSnapshotForApi(await loadSnapshot())
-      : null;
+    // hit a different empty instance after sync. loadSnapshot() already caches
+    // the slimmed form on Vercel.
+    let snapshot = null;
+    if (body.includeSnapshot !== false) {
+      try {
+        snapshot = await loadSnapshot();
+      } catch (snapErr) {
+        console.error('[api/crm/sync] snapshot build failed after sync', snapErr);
+      }
+    }
 
     return NextResponse.json({
       ok: true,

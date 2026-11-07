@@ -325,7 +325,10 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
   };
 
   if (IS_VERCEL) {
-    memory().snapshot = snapshot;
+    // Cache the API-slimmed snapshot so sync/snapshot responses stay small.
+    const { slimSnapshotForApi } = await import('./slimSnapshot');
+    memory().snapshot = slimSnapshotForApi(snapshot);
+    return memory().snapshot!;
   }
 
   return snapshot;

@@ -55,6 +55,8 @@ function buildInteractionSeries(interactions: Interaction[]): {
 }
 
 function slimClassification(c: ClassificationResult): ClassificationResult {
+  const primaryReason =
+    c.reasons?.[c.primaryCategory] || c.recommendedAction || '';
   return {
     customerId: c.customerId,
     salesProcessId: c.salesProcessId,
@@ -62,10 +64,9 @@ function slimClassification(c: ClassificationResult): ClassificationResult {
     primaryCategory: c.primaryCategory,
     underlyingFlags: c.underlyingFlags,
     callDataStatus: c.callDataStatus,
-    missingFields: c.missingFields,
+    missingFields: c.missingFields?.length ? c.missingFields : [],
     recommendedAction: c.recommendedAction,
-    // Keep short reason strings; drop bulky evidence / ruleResults payloads.
-    reasons: c.reasons,
+    reasons: primaryReason ? { [c.primaryCategory]: primaryReason } : {},
     evidence: {},
     ruleResults: {},
   };

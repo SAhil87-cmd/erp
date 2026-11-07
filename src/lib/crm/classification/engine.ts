@@ -176,6 +176,10 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
       ? 'INSUFFICIENT_CALL_DATA'
       : 'OK';
 
+  // On Vercel, drop bulky per-rule evidence from the cached snapshot so API
+  // responses stay small enough to finish before the platform kills the request.
+  const compact = Boolean(process.env.VERCEL);
+
   return {
     customerId: input.customerId,
     salesProcessId: input.salesProcessId,
@@ -185,9 +189,14 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
     callDataStatus: finalCallDataStatus,
     missingFields: [...missingFields],
     recommendedAction: RECOMMENDED_ACTIONS[primaryCategory],
-    evidence,
-    reasons,
-    ruleResults,
+    evidence: compact ? {} : evidence,
+    reasons: compact
+      ? {
+          [primaryCategory]:
+            reasons[primaryCategory] || RECOMMENDED_ACTIONS[primaryCategory],
+        }
+      : reasons,
+    ruleResults: compact ? {} : ruleResults,
   };
 }
 
