@@ -346,4 +346,10 @@ export interface CrmSnapshot {
    * Used for Call date filters when calls[] is truncated.
    */
   processIdsByCallDay?: Record<string, string[]>;
+  /** Boot pack without lead rows — use precomputed overview* fields for KPIs. */
+  pack?: 'overview' | 'full';
+  /** Precomputed when pack=overview (lead rows omitted for payload size). */
+  overviewMetrics?: import('./analytics').OverviewMetrics;
+  recoveryMetrics?: import('./analytics').RecoveryMetrics;
+  executivePerformance?: import('./analytics').ExecutivePerformance[];
 }

@@ -29,16 +29,32 @@ export function ExecutiveOverview() {
   const derived = useMemo(() => {
     if (!snapshot) return null;
     const filtered = filterSnapshotClient(snapshot, filters);
-    const metrics = computeOverviewMetrics(filtered);
-    const recovery = computeRecoveryMetrics(filtered.classifications);
-    const execs = computeExecutivePerformance(filtered)
+    const hasDateFilter = Boolean(filters.dateFrom || filters.dateTo);
+    const usePrecomputed =
+      snapshot.pack === 'overview' &&
+      filtered.processes.length === 0 &&
+      Boolean(snapshot.overviewMetrics) &&
+      !hasDateFilter;
+
+    const metrics = usePrecomputed
+      ? { ...snapshot.overviewMetrics! }
+      : computeOverviewMetrics(filtered);
+    const recovery = usePrecomputed
+      ? snapshot.recoveryMetrics ?? computeRecoveryMetrics(filtered.classifications)
+      : computeRecoveryMetrics(filtered.classifications);
+    const execs = (
+      usePrecomputed && snapshot.executivePerformance
+        ? snapshot.executivePerformance
+        : computeExecutivePerformance(filtered)
+    )
       .sort((a, b) => b.processCount - a.processCount)
       .slice(0, 8);
-    const insufficient = filtered.classifications.filter(
-      (c) => c.callDataStatus === 'INSUFFICIENT_CALL_DATA',
-    ).length;
+    const insufficient = usePrecomputed
+      ? 0
+      : filtered.classifications.filter(
+          (c) => c.callDataStatus === 'INSUFFICIENT_CALL_DATA',
+        ).length;
 
-    const hasDateFilter = Boolean(filters.dateFrom || filters.dateTo);
     if (hasDateFilter) {
       const callSum = sumCallsInDateRange(
         snapshot.callsByDayByExecutive,

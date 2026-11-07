@@ -18,10 +18,9 @@ function hydrateSnapshot(raw: unknown): CrmSnapshot {
 
 function isEmptySnapshot(snapshot: CrmSnapshot | null | undefined): boolean {
   if (!snapshot) return true;
-  return (
-    (snapshot.customers?.length ?? 0) === 0 &&
-    (snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) === 0
-  );
+  if ((snapshot.callTotal ?? snapshot.syncMeta?.callCount ?? 0) > 0) return false;
+  if ((snapshot.overviewMetrics?.totalCustomers ?? 0) > 0) return false;
+  return (snapshot.customers?.length ?? 0) === 0;
 }
 
 export interface SelectedLead {
@@ -74,7 +73,8 @@ type ApiJson = {
 
 async function parseJson(res: Response): Promise<ApiJson> {
   const contentType = res.headers.get('content-type') || '';
-  const text = await res.text();
+  // Sync streams whitespace keepalives before the JSON body — trim them.
+  const text = (await res.text()).trim();
   const looksHtml =
     contentType.includes('text/html') ||
     text.trimStart().startsWith('<!DOCTYPE') ||
@@ -228,10 +228,17 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
             mode: 'published',
             force: true,
             includeSnapshot: true,
+            // Small boot pack — full lead rows are loaded when opening lead tabs.
+            pack: 'overview',
           }),
         });
       } finally {
         clearTimeout(timer);
+      }
+      if (!res.ok && res.headers.get('content-type')?.includes('text/html')) {
+        throw new Error(
+          `Server returned an error page (${res.status}). Click Retry — first sync can take up to a minute.`,
+        );
       }
       const data = await parseJson(res);
       const snapshot = await snapshotFromApi(data);

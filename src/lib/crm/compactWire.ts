@@ -60,6 +60,7 @@ export type CompactFollowUpRow = [string, string, string, string, string, string
 
 export interface CompactCrmWire {
   v: 1;
+  pack?: 'overview' | 'full';
   builtAt: string;
   syncMeta: SyncMeta;
   callTotal: number;
@@ -74,6 +75,9 @@ export interface CompactCrmWire {
   callsByDayByExecutive?: CrmSnapshot['callsByDayByExecutive'];
   processIdsByInteractionDay?: CrmSnapshot['processIdsByInteractionDay'];
   processIdsByCallDay?: CrmSnapshot['processIdsByCallDay'];
+  overviewMetrics?: CrmSnapshot['overviewMetrics'];
+  recoveryMetrics?: CrmSnapshot['recoveryMetrics'];
+  executivePerformance?: CrmSnapshot['executivePerformance'];
   leads: CompactLeadRow[];
   followUps: CompactFollowUpRow[];
   calls: CallRecord[];
@@ -312,5 +316,9 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
     callsByDayByExecutive: wire.callsByDayByExecutive,
     processIdsByInteractionDay: wire.processIdsByInteractionDay,
     processIdsByCallDay: wire.processIdsByCallDay,
+    pack: wire.pack ?? (wire.leads.length ? 'full' : 'overview'),
+    overviewMetrics: wire.overviewMetrics,
+    recoveryMetrics: wire.recoveryMetrics,
+    executivePerformance: wire.executivePerformance,
   };
 }

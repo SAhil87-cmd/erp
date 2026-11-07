@@ -14,9 +14,13 @@ export function ExecutivePerformanceView() {
 
   const rows = useMemo(() => {
     if (!snapshot) return [];
-    const perf = computeExecutivePerformance(
-      filterSnapshotClient(snapshot, filters),
-    );
+    const filtered = filterSnapshotClient(snapshot, filters);
+    const perf =
+      snapshot.pack === 'overview' &&
+      filtered.processes.length === 0 &&
+      snapshot.executivePerformance?.length
+        ? snapshot.executivePerformance
+        : computeExecutivePerformance(filtered);
     const todayMap = new Map(
       (snapshot.todayCallsByExecutive ?? []).map((r) => [
         r.executiveName.toLowerCase(),

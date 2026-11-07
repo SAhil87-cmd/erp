@@ -1,8 +1,14 @@
 import { gzipSync } from 'zlib';
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  computeExecutivePerformance,
+  computeOverviewMetrics,
+  computeRecoveryMetrics,
+} from '@/lib/crm/analytics';
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
 import { loadSnapshot } from '@/lib/crm/store';
+import type { CrmSnapshot } from '@/lib/crm/types';
 
 export const runtime = 'nodejs';
 /** Published call sheet is ~10MB / 50k+ rows. */
@@ -20,6 +26,23 @@ const jsonReplacer = (_key: string, value: unknown) => {
   return value;
 };
 
+function toOverviewWire(snapshot: CrmSnapshot) {
+  const wire = toCompactWire(snapshot);
+  // Drop the 10k lead rows — they make the browser fetch die on long TTFB/large body.
+  // Overview KPIs are precomputed below and attached after hydrate.
+  return {
+    ...wire,
+    pack: 'overview' as const,
+    leads: [] as typeof wire.leads,
+    followUps: [] as typeof wire.followUps,
+    calls: wire.calls?.slice(0, 40) ?? [],
+    // Keep day indexes for date filters; omit huge process id lists if enormous.
+    overviewMetrics: computeOverviewMetrics(snapshot),
+    recoveryMetrics: computeRecoveryMetrics(snapshot.classifications),
+    executivePerformance: computeExecutivePerformance(snapshot),
+  };
+}
+
 export async function GET() {
   try {
     const status = await getSyncStatus();
@@ -31,62 +54,111 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = (await req.json().catch(() => ({}))) as {
-      mode?: 'published' | 'api';
-      includeSnapshot?: boolean;
-    };
-    const result = await syncFromGoogleSheets({
-      mode: body.mode ?? 'published',
-    });
-    const syncMeta = await getSyncStatus();
+  const body = (await req.json().catch(() => ({}))) as {
+    mode?: 'published' | 'api';
+    includeSnapshot?: boolean;
+    /** overview = small boot pack (default). full = include all leads. */
+    pack?: 'overview' | 'full';
+  };
 
-    if (result.status === 'error') {
-      return NextResponse.json(
-        { ok: false, error: result.message, result, syncMeta },
-        { status: 502 },
-      );
-    }
+  // Stream whitespace keepalives so browsers/proxies do not kill the connection
+  // during the 30–90s sheet sync + classify (that surfaces as "Failed to fetch").
+  const stream = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = stream.writable.getWriter();
+  const encoder = new TextEncoder();
 
-    let snapshot: string | null = null;
-    let snapshotEncoding: 'gzip-base64' | null = null;
-    let snapshotError: string | null = null;
+  void (async () => {
+    const heartbeat = setInterval(() => {
+      void writer.write(encoder.encode(' '));
+    }, 4000);
+    try {
+      const result = await syncFromGoogleSheets({
+        mode: body.mode ?? 'published',
+      });
+      const syncMeta = await getSyncStatus();
 
-    if (body.includeSnapshot !== false) {
-      try {
-        // Compact wire gzipped+base64 inside normal JSON.
-        // - Raw multi-MB JSON stalls on Vercel
-        // - application/octet-stream gzip breaks browser fetch ("Failed to fetch")
-        const wire = toCompactWire(await loadSnapshot());
-        const wireJson = JSON.stringify(wire, jsonReplacer);
-        snapshot = gzipSync(Buffer.from(wireJson, 'utf8'), { level: 6 }).toString(
-          'base64',
+      if (result.status === 'error') {
+        await writer.write(
+          encoder.encode(
+            JSON.stringify({
+              ok: false,
+              error: result.message,
+              result,
+              syncMeta,
+            }),
+          ),
         );
-        snapshotEncoding = 'gzip-base64';
-      } catch (snapErr) {
-        snapshotError =
-          snapErr instanceof Error ? snapErr.message : 'Snapshot build failed';
-        console.error('[api/crm/sync] snapshot build failed after sync', snapErr);
+        return;
+      }
+
+      let snapshot: string | null = null;
+      let snapshotEncoding: 'gzip-base64' | null = null;
+      let snapshotError: string | null = null;
+      let pack: 'overview' | 'full' | null = null;
+
+      if (body.includeSnapshot !== false) {
+        try {
+          const full = await loadSnapshot();
+          const useFull = body.pack === 'full';
+          const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
+          if (!useFull) {
+            // Overview boot does not need day→processId maps (keeps payload tiny).
+            delete (wire as { processIdsByInteractionDay?: unknown })
+              .processIdsByInteractionDay;
+            delete (wire as { processIdsByCallDay?: unknown }).processIdsByCallDay;
+          }
+          pack = useFull ? 'full' : 'overview';
+          const wireJson = JSON.stringify(wire, jsonReplacer);
+          snapshot = gzipSync(Buffer.from(wireJson, 'utf8'), {
+            level: 6,
+          }).toString('base64');
+          snapshotEncoding = 'gzip-base64';
+        } catch (snapErr) {
+          snapshotError =
+            snapErr instanceof Error ? snapErr.message : 'Snapshot build failed';
+          console.error('[api/crm/sync] snapshot build failed after sync', snapErr);
+        }
+      }
+
+      await writer.write(
+        encoder.encode(
+          JSON.stringify({
+            ok: true,
+            result,
+            syncMeta,
+            pack,
+            snapshotEncoding,
+            snapshot,
+            snapshotError,
+          }),
+        ),
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Sync failed';
+      console.error('[api/crm/sync]', err);
+      try {
+        await writer.write(
+          encoder.encode(JSON.stringify({ ok: false, error: message })),
+        );
+      } catch {
+        // ignore write failures after abort
+      }
+    } finally {
+      clearInterval(heartbeat);
+      try {
+        await writer.close();
+      } catch {
+        // ignore
       }
     }
+  })();
 
-    return NextResponse.json(
-      {
-        ok: true,
-        result,
-        syncMeta,
-        snapshotEncoding,
-        snapshot,
-        snapshotError,
-      },
-      {
-        status: 200,
-        headers: { 'Cache-Control': 'no-store' },
-      },
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Sync failed';
-    console.error('[api/crm/sync]', err);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
-  }
+  return new NextResponse(stream.readable, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+    },
+  });
 }
