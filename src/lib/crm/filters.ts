@@ -11,6 +11,7 @@
  */
 
 import { calendarDateKey, isCalendarKeyInRange } from './dates';
+import { processIdsMatchingDateRange } from './dateIndex';
 import type {
   CallRecord,
   ClassificationResult,
@@ -28,6 +29,8 @@ export interface FilterableSnapshot {
   calls: CallRecord[];
   followUps: FollowUpActivity[];
   classifications: ClassificationResult[];
+  processIdsByInteractionDay?: Record<string, string[]>;
+  processIdsByCallDay?: Record<string, string[]>;
 }
 
 export interface FilteredResult extends FilterableSnapshot {
@@ -100,7 +103,27 @@ export function applyGlobalFilters(
   );
   const customerById = new Map(snapshot.customers.map((c) => [c.customerId, c]));
 
+  const dateField = filters.dateField ?? 'interaction';
+  const dateIndexIds =
+    filters.dateFrom || filters.dateTo
+      ? processIdsMatchingDateRange(
+          dateField === 'call'
+            ? snapshot.processIdsByCallDay
+            : dateField === 'interaction'
+              ? snapshot.processIdsByInteractionDay
+              : undefined,
+          filters,
+        )
+      : null;
+
   const matchedProcesses = snapshot.processes.filter((process) => {
+    if (dateIndexIds) {
+      const callFallbackId = `customer:${process.customerId}`;
+      const inIndex =
+        dateIndexIds.has(process.salesProcessId) ||
+        (dateField === 'call' && dateIndexIds.has(callFallbackId));
+      if (!inIndex) return false;
+    }
     if (filters.stages?.length && !filters.stages.includes(process.currentStage)) {
       return false;
     }
@@ -150,7 +173,9 @@ export function applyGlobalFilters(
         .toLowerCase();
       if (!hay.includes(q)) return false;
     }
+    // Day-index already applied for interaction/call. Other date fields still use row stamps.
     if (
+      !dateIndexIds &&
       !processMatchesDate(
         process,
         filters,

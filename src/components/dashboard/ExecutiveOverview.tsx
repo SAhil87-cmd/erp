@@ -7,7 +7,11 @@ import {
   computeOverviewMetrics,
   computeRecoveryMetrics,
 } from '@/lib/crm/analytics';
-import { calendarDateKey } from '@/lib/crm/dates';
+import { calendarDateKey, isCalendarKeyInRange } from '@/lib/crm/dates';
+import {
+  sumCallsInDateRange,
+  sumInteractionsInDateRange,
+} from '@/lib/crm/dateIndex';
 import { ChartCard } from './charts/ChartCard';
 import { SimpleBarChart } from './charts/SimpleBarChart';
 import { SimplePieChart } from './charts/SimplePieChart';
@@ -34,6 +38,21 @@ export function ExecutiveOverview() {
       (c) => c.callDataStatus === 'INSUFFICIENT_CALL_DATA',
     ).length;
 
+    const hasDateFilter = Boolean(filters.dateFrom || filters.dateTo);
+    if (hasDateFilter) {
+      const callSum = sumCallsInDateRange(
+        snapshot.callsByDayByExecutive,
+        filters,
+      );
+      if (callSum != null) metrics.totalCalls = callSum;
+      const ixSum = sumInteractionsInDateRange(
+        snapshot.interactionSeries?.daily,
+        filters,
+        filters.dateFrom ?? filters.dateTo ?? undefined,
+      );
+      if (ixSum != null) metrics.totalInteractions = ixSum;
+    }
+
     const series = snapshot.interactionSeries;
     let daily = series?.daily ?? [];
     let monthly = series?.monthly ?? [];
@@ -57,6 +76,22 @@ export function ExecutiveOverview() {
       monthly = [...monthlyMap.entries()]
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([name, value]) => ({ name, value }));
+    } else if (hasDateFilter) {
+      const year = (filters.dateFrom ?? filters.dateTo ?? '').slice(0, 4);
+      daily = daily.filter((d) =>
+        isCalendarKeyInRange(
+          d.name.length === 5 ? `${year}-${d.name}` : d.name,
+          filters.dateFrom,
+          filters.dateTo,
+        ),
+      );
+      monthly = monthly.filter((m) => {
+        const monthStart = `${m.name}-01`;
+        const monthEnd = `${m.name}-31`;
+        const fromOk = !filters.dateFrom || monthEnd >= filters.dateFrom;
+        const toOk = !filters.dateTo || monthStart <= filters.dateTo;
+        return fromOk && toOk;
+      });
     }
 
     const stageData = Object.entries(metrics.byStage).map(([name, value]) => ({
@@ -191,9 +226,11 @@ export function ExecutiveOverview() {
             label: 'Calls linked',
             value: metrics.totalCalls,
             hint:
-              snapshot?.callsTruncated
-                ? `Full sheet total (${metrics.totalCalls.toLocaleString()}); list preview capped for speed`
-                : undefined,
+              filters.dateFrom || filters.dateTo
+                ? `Calls in selected date range (${metrics.totalCalls.toLocaleString()})`
+                : snapshot?.callsTruncated
+                  ? `Full sheet total (${metrics.totalCalls.toLocaleString()}); list preview capped for speed`
+                  : undefined,
           },
         ]}
       />

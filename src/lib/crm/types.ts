@@ -336,4 +336,14 @@ export interface CrmSnapshot {
     total: number;
     byExecutive: Array<{ executiveName: string; callCount: number }>;
   }>;
+  /**
+   * processIds that had an interaction on each calendar day (last ~30 days).
+   * Used for date filters when interactions[] is truncated for payload size.
+   */
+  processIdsByInteractionDay?: Record<string, string[]>;
+  /**
+   * processIds (or customer-scoped fallback ids) that had a call on each day.
+   * Used for Call date filters when calls[] is truncated.
+   */
+  processIdsByCallDay?: Record<string, string[]>;
 }

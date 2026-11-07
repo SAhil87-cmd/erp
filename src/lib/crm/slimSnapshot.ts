@@ -3,6 +3,7 @@
  */
 
 import { calendarDateKey, todayCalendarKey } from './dates';
+import { buildProcessIdsByCallDay } from './dateIndex';
 import type {
   CallRecord,
   ClassificationResult,
@@ -287,5 +288,7 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
     todayCallsByExecutive: toExecRows(activityByExec),
     callsByExecutive: toExecRows(allByExec),
     callsByDayByExecutive,
+    processIdsByInteractionDay: snapshot.processIdsByInteractionDay,
+    processIdsByCallDay: buildProcessIdsByCallDay(calls),
   };
 }

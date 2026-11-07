@@ -8,6 +8,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { classifyAllProcesses } from './classification/engine';
 import { calendarDateKey } from './dates';
+import { buildProcessIdsByInteractionDay } from './dateIndex';
 import { buildRelationalModel } from './normalize';
 import {
   buildInteractionSeries,
@@ -287,6 +288,7 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
   // Vercel: free fat intermediates ASAP so sync+snapshot fits in the worker.
   let interactionSeries: CrmSnapshot['interactionSeries'];
   let interactionTotal = model.interactions.length;
+  let processIdsByInteractionDay: CrmSnapshot['processIdsByInteractionDay'];
   if (IS_VERCEL) {
     for (const ix of model.interactions) {
       ix.raw = {};
@@ -309,6 +311,9 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
       exec.processIds = [];
     }
     interactionSeries = buildInteractionSeries(model.interactions);
+    processIdsByInteractionDay = buildProcessIdsByInteractionDay(
+      model.interactions,
+    );
     // Stamp last interaction day on processes before dropping interaction bodies.
     const lastIx = new Map<string, string>();
     for (const ix of model.interactions) {
@@ -388,6 +393,7 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     builtAt: new Date().toISOString(),
     interactionTotal,
     interactionSeries,
+    processIdsByInteractionDay,
   };
 
   if (IS_VERCEL) {

@@ -72,6 +72,8 @@ export interface CompactCrmWire {
   todayCallsByExecutive?: CrmSnapshot['todayCallsByExecutive'];
   callsByExecutive?: CrmSnapshot['callsByExecutive'];
   callsByDayByExecutive?: CrmSnapshot['callsByDayByExecutive'];
+  processIdsByInteractionDay?: CrmSnapshot['processIdsByInteractionDay'];
+  processIdsByCallDay?: CrmSnapshot['processIdsByCallDay'];
   leads: CompactLeadRow[];
   followUps: CompactFollowUpRow[];
   calls: CallRecord[];
@@ -166,6 +168,8 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
     todayCallsByExecutive: snapshot.todayCallsByExecutive,
     callsByExecutive: snapshot.callsByExecutive,
     callsByDayByExecutive: snapshot.callsByDayByExecutive,
+    processIdsByInteractionDay: snapshot.processIdsByInteractionDay,
+    processIdsByCallDay: snapshot.processIdsByCallDay,
     leads,
     followUps,
     calls: snapshot.calls ?? [],
@@ -306,5 +310,7 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
     todayCallsByExecutive: wire.todayCallsByExecutive,
     callsByExecutive: wire.callsByExecutive,
     callsByDayByExecutive: wire.callsByDayByExecutive,
+    processIdsByInteractionDay: wire.processIdsByInteractionDay,
+    processIdsByCallDay: wire.processIdsByCallDay,
   };
 }

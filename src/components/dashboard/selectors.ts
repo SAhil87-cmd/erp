@@ -44,6 +44,7 @@ export function filterSnapshotClient(
   if (!hasFilters) return snapshot;
 
   const filtered = applyGlobalFilters(snapshot, filters);
+  const dateFiltered = Boolean(filters.dateFrom || filters.dateTo);
   return {
     ...snapshot,
     customers: filtered.customers,
@@ -52,6 +53,11 @@ export function filterSnapshotClient(
     calls: filtered.calls,
     followUps: filtered.followUps,
     classifications: filtered.classifications,
+    // Prevent overview from reading the unfiltered full-sheet callTotal.
+    callTotal: dateFiltered ? filtered.calls.length : snapshot.callTotal,
+    interactionTotal: dateFiltered
+      ? filtered.interactions.length
+      : snapshot.interactionTotal,
   };
 }
 
