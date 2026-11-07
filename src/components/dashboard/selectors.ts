@@ -53,11 +53,10 @@ export function filterSnapshotClient(
     calls: filtered.calls,
     followUps: filtered.followUps,
     classifications: filtered.classifications,
-    // Prevent overview from reading the unfiltered full-sheet callTotal.
-    callTotal: dateFiltered ? filtered.calls.length : snapshot.callTotal,
-    interactionTotal: dateFiltered
-      ? filtered.interactions.length
-      : snapshot.interactionTotal,
+    // Preview arrays are truncated — never treat their length as the sheet total.
+    // Date-scoped call/interaction totals are patched from day indexes in the overview.
+    callTotal: dateFiltered ? undefined : snapshot.callTotal,
+    interactionTotal: dateFiltered ? undefined : snapshot.interactionTotal,
   };
 }
 

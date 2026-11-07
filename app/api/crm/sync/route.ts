@@ -31,7 +31,8 @@ function toOverviewWire(snapshot: CrmSnapshot) {
   return {
     ...wire,
     pack: 'overview' as const,
-    leads: [] as typeof wire.leads,
+    // Keep compact leads + day indexes so date filters can recompute KPIs client-side.
+    // Only trim bulky call/follow-up previews; metrics still use callTotal / series.
     followUps: [] as typeof wire.followUps,
     calls: wire.calls?.slice(0, 40) ?? [],
     overviewMetrics: computeOverviewMetrics(snapshot),
@@ -82,11 +83,6 @@ export async function POST(req: NextRequest) {
         const full = await loadSnapshot();
         const useFull = body.pack === 'full';
         const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
-        if (!useFull) {
-          delete (wire as { processIdsByInteractionDay?: unknown })
-            .processIdsByInteractionDay;
-          delete (wire as { processIdsByCallDay?: unknown }).processIdsByCallDay;
-        }
         pack = useFull ? 'full' : 'overview';
         snapshot = gzipSync(
           Buffer.from(JSON.stringify(wire, jsonReplacer), 'utf8'),
@@ -153,11 +149,6 @@ export async function POST(req: NextRequest) {
             const full = await loadSnapshot();
             const useFull = body.pack === 'full';
             const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
-            if (!useFull) {
-              delete (wire as { processIdsByInteractionDay?: unknown })
-                .processIdsByInteractionDay;
-              delete (wire as { processIdsByCallDay?: unknown }).processIdsByCallDay;
-            }
             pack = useFull ? 'full' : 'overview';
             snapshot = gzipSync(
               Buffer.from(JSON.stringify(wire, jsonReplacer), 'utf8'),

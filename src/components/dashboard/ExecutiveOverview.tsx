@@ -30,11 +30,20 @@ export function ExecutiveOverview() {
     if (!snapshot) return null;
     const filtered = filterSnapshotClient(snapshot, filters);
     const hasDateFilter = Boolean(filters.dateFrom || filters.dateTo);
+    const hasNarrowingFilter =
+      hasDateFilter ||
+      Boolean(filters.executives?.length) ||
+      Boolean(filters.projects?.length) ||
+      Boolean(filters.stages?.length) ||
+      Boolean(filters.categories?.length) ||
+      Boolean(filters.processNames?.length) ||
+      Boolean(filters.search?.trim());
+    // Precomputed KPIs only when the overview pack has no lead rows and no filters.
     const usePrecomputed =
       snapshot.pack === 'overview' &&
       filtered.processes.length === 0 &&
       Boolean(snapshot.overviewMetrics) &&
-      !hasDateFilter;
+      !hasNarrowingFilter;
 
     const metrics = usePrecomputed
       ? { ...snapshot.overviewMetrics! }
