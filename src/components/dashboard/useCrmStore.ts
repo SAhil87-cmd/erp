@@ -286,7 +286,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Accept: 'application/x-ndjson, application/json',
+            Accept: 'application/json',
           },
           cache: 'no-store',
           signal: controller.signal,
@@ -294,9 +294,10 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
             mode: 'published',
             force: true,
             includeSnapshot: true,
-            // Small boot pack — full lead rows are loaded when opening lead tabs.
+            // Compact leads + precomputed KPIs; date filters recompute client-side.
             pack: 'overview',
-            stream: true,
+            // Plain JSON — reliable on localhost (and avoids Vercel stream buffering).
+            stream: false,
           }),
         });
       } finally {
@@ -307,7 +308,7 @@ export const useCrmStore = create<CrmStoreState>((set, get) => ({
           `Server returned an error page (${res.status}). Click Retry — first sync can take up to a minute.`,
         );
       }
-      const data = await parseSyncStream(res);
+      const data = await parseJson(res);
       const snapshot = await snapshotFromApi(data);
       if (!snapshot) {
         set({

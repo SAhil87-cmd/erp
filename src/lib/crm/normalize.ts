@@ -357,6 +357,14 @@ export function buildRelationalModel(rows: RawSheetRow[]): RelationalModel {
 
     const latest = procInteractions[procInteractions.length - 1];
     process.currentStage = latest.status;
+    // Prefer newest non-empty sheet Notes (skip synthetic "Last call:" stamps).
+    for (let i = procInteractions.length - 1; i >= 0; i -= 1) {
+      const n = procInteractions[i]?.notes?.trim();
+      if (n && !n.toLowerCase().startsWith('last call:')) {
+        process.remark = n;
+        break;
+      }
+    }
     process.currentStageRaw = latest.statusRaw;
     if (latest.assignedTo) process.assignedTo = latest.assignedTo;
     if (latest.projectName) process.projectName = latest.projectName;

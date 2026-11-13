@@ -118,6 +118,7 @@ describe('compactWire', () => {
       null as unknown as string,
       '2026-11-01',
       '2026-11-06',
+      'cnr',
     ];
     const restored = fromCompactWire(wire);
     expect(restored.customers).toHaveLength(1);

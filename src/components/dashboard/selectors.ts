@@ -21,6 +21,8 @@ export interface LeadRow {
   recommendedAction: string;
   callDataStatus: string;
   reason: string;
+  /** Sheet Notes column for this person. */
+  remark: string;
   stageEnteredAt: string | null;
   customer: Customer;
   process: SalesProcess;
@@ -99,6 +101,7 @@ export function buildLeadRows(
       recommendedAction: classification.recommendedAction || reason,
       callDataStatus: classification.callDataStatus,
       reason,
+      remark: process.remark?.trim() || '',
       stageEnteredAt: process.stageEnteredAt,
       customer,
       process,

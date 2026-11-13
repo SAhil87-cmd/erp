@@ -187,6 +187,10 @@ export function CustomerDrawer() {
                 <dd>{process.source || '—'}</dd>
               </div>
               <div>
+                <dt>Remark</dt>
+                <dd>{process.remark || '—'}</dd>
+              </div>
+              <div>
                 <dt>Company</dt>
                 <dd>{customer.companyName || customer.firmName || '—'}</dd>
               </div>

@@ -7,8 +7,15 @@ import {
 } from '@/lib/crm/analytics';
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
+import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
 import { loadSnapshot } from '@/lib/crm/store';
 import type { CrmSnapshot } from '@/lib/crm/types';
+
+/** Always slim before wire — localhost fat snapshots lack activityDate / day indexes. */
+function packSnapshot(full: CrmSnapshot): CrmSnapshot {
+  if (full.activityDate && full.callsByDayByExecutive?.length) return full;
+  return slimSnapshotForApi(full);
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -80,7 +87,7 @@ export async function POST(req: NextRequest) {
       let snapshotError: string | null = null;
       let pack: 'overview' | 'full' | null = null;
       if (body.includeSnapshot !== false) {
-        const full = await loadSnapshot();
+        const full = packSnapshot(await loadSnapshot());
         const useFull = body.pack === 'full';
         const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
         pack = useFull ? 'full' : 'overview';
@@ -173,11 +180,12 @@ export async function POST(req: NextRequest) {
 
         if (body.includeSnapshot !== false) {
           try {
-            const full = await awaitWithHeartbeats(
+            const loaded = await awaitWithHeartbeats(
               send,
               'building-dashboard',
               loadSnapshot(),
             );
+            const full = packSnapshot(loaded);
             // Yield so a heartbeat can flush before heavy JSON/gzip work.
             await new Promise((r) => setImmediate(r));
             send({ ok: true, phase: 'packing-dashboard', t: Date.now() });

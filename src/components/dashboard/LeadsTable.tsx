@@ -32,7 +32,16 @@ export function LeadsTable({
     let list = rows;
     if (q) {
       list = list.filter((r) =>
-        [r.name, r.mobile, r.customerId, r.projectName, r.assignedTo, r.stage, r.category]
+        [
+          r.name,
+          r.mobile,
+          r.customerId,
+          r.projectName,
+          r.assignedTo,
+          r.stage,
+          r.category,
+          r.remark,
+        ]
           .join(' ')
           .toLowerCase()
           .includes(q),
@@ -110,6 +119,7 @@ export function LeadsTable({
                     </button>
                   </th>
                   <th>Why</th>
+                  <th>Remark</th>
                   <th>Next action</th>
                   <th>
                     <button type="button" onClick={() => toggleSort('stageEnteredAt')}>
@@ -147,6 +157,9 @@ export function LeadsTable({
                       ) : null}
                     </td>
                     <td className="cell-clamp">{row.reason || '—'}</td>
+                    <td className="cell-clamp" title={row.remark || undefined}>
+                      {row.remark || '—'}
+                    </td>
                     <td className="cell-clamp">{row.recommendedAction}</td>
                     <td>{formatDate(row.stageEnteredAt)}</td>
                   </tr>

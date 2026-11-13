@@ -37,11 +37,89 @@ export interface ExecutivePerformance {
   customerCount: number;
   closedCount: number;
   goneDarkCount: number;
+  mismarkedNiCount: number;
   notPickingUpCount: number;
   stuckCount: number;
   highIntentCount: number;
   veryHighIntentCount: number;
+  /** High + Very High Intent combined. */
+  intentCount: number;
+  /**
+   * Performance ranking score — higher is better.
+   * Driven by conversion/closed deals; Gone Dark & Mismarked NI use rates
+   * (so a large healthy book is not punished for absolute counts).
+   */
+  rankingScore: number;
   conversionRate: number;
+}
+
+export type ExecutiveRankingRow = Pick<
+  ExecutivePerformance,
+  | 'closedCount'
+  | 'conversionRate'
+  | 'goneDarkCount'
+  | 'mismarkedNiCount'
+  | 'intentCount'
+  | 'rankingScore'
+  | 'processCount'
+> & {
+  callsToday?: number;
+  callsTotal?: number;
+};
+
+function rate(count: number, processCount: number): number {
+  if (!processCount) return 0;
+  return count / processCount;
+}
+
+/**
+ * Top rank = strong conversion / closed deals.
+ * Gone Dark & Mismarked NI only hurt when their *rate* is high.
+ */
+export function compareExecutiveRanking(
+  a: ExecutiveRankingRow,
+  b: ExecutiveRankingRow,
+): number {
+  const callsA = a.callsToday || a.callsTotal || 0;
+  const callsB = b.callsToday || b.callsTotal || 0;
+  return (
+    b.rankingScore - a.rankingScore ||
+    b.conversionRate - a.conversionRate ||
+    b.closedCount - a.closedCount ||
+    rate(a.mismarkedNiCount, a.processCount) -
+      rate(b.mismarkedNiCount, b.processCount) ||
+    rate(a.goneDarkCount, a.processCount) -
+      rate(b.goneDarkCount, b.processCount) ||
+    callsB - callsA ||
+    b.intentCount - a.intentCount
+  );
+}
+
+/** Higher is better — conversion + closed, soft rate penalties for GD / Mismarked NI. */
+export function executiveRankingScore(input: {
+  closedCount?: number;
+  conversionRate?: number;
+  processCount?: number;
+  mismarkedNiCount?: number;
+  goneDarkCount?: number;
+  intentCount?: number;
+  calls?: number;
+}): number {
+  const closed = input.closedCount ?? 0;
+  const conversion = input.conversionRate ?? 0;
+  const processCount = input.processCount ?? 0;
+  const mismarkedRate = rate(input.mismarkedNiCount ?? 0, processCount);
+  const goneDarkRate = rate(input.goneDarkCount ?? 0, processCount);
+  const intent = input.intentCount ?? 0;
+  const calls = input.calls ?? 0;
+  return (
+    closed * 10 +
+    conversion * 1000 -
+    mismarkedRate * 200 -
+    goneDarkRate * 200 +
+    intent * 2 +
+    Math.log10(calls + 1) * 5
+  );
 }
 
 export interface ProjectIntelligence {
@@ -165,6 +243,7 @@ export function computeExecutivePerformance(
   return [...byExec.entries()].map(([executiveName, processes]) => {
     let closedCount = 0;
     let goneDarkCount = 0;
+    let mismarkedNiCount = 0;
     let notPickingUpCount = 0;
     let stuckCount = 0;
     let highIntentCount = 0;
@@ -180,24 +259,38 @@ export function computeExecutivePerformance(
       const cls = clsByProcess.get(p.salesProcessId);
       if (!cls) continue;
       if (cls.primaryCategory === 'GONE_DARK') goneDarkCount += 1;
+      if (cls.primaryCategory === 'MISMARKED_NI') mismarkedNiCount += 1;
       if (cls.primaryCategory === 'NOT_PICKING_UP') notPickingUpCount += 1;
       if (cls.primaryCategory === 'STUCK') stuckCount += 1;
       if (cls.primaryCategory === 'HIGH_INTENT') highIntentCount += 1;
       if (cls.primaryCategory === 'VERY_HIGH_INTENT') veryHighIntentCount += 1;
     }
 
+    const intentCount = highIntentCount + veryHighIntentCount;
     const denom = closedCount + ni + active;
+    const conversionRate = denom === 0 ? 0 : closedCount / denom;
+    const rankingScore = executiveRankingScore({
+      closedCount,
+      conversionRate,
+      processCount: processes.length,
+      mismarkedNiCount,
+      goneDarkCount,
+      intentCount,
+    });
     return {
       executiveName,
       processCount: processes.length,
       customerCount: new Set(processes.map((p) => p.customerId)).size,
       closedCount,
       goneDarkCount,
+      mismarkedNiCount,
       notPickingUpCount,
       stuckCount,
       highIntentCount,
       veryHighIntentCount,
-      conversionRate: denom === 0 ? 0 : closedCount / denom,
+      intentCount,
+      rankingScore,
+      conversionRate,
     };
   });
 }

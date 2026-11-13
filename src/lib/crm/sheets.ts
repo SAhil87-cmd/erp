@@ -8,8 +8,13 @@
  */
 
 import {
+  applyRemarksToRows,
+  loadCrmRemarksByCustomer,
+} from './crmRemarks';
+import {
   PUBLISHED_SHEET_HTML_URL,
   getPublishedCallsCsvUrl,
+  getPublishedCrmCsvUrl,
   getPublishedSheetCsvUrl,
   toPublishedCsvUrl,
 } from './dataset';
@@ -163,15 +168,31 @@ async function doSyncFromPublishedSheet(
     if (!urlOverride) {
       const callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
       await yieldEventLoop();
-      const { calls, errors, derivedRows: derived } =
+      const { calls, errors, derivedRows } =
         await importPublishedCallSheetAsync(callsText);
       await yieldEventLoop();
       await saveCalls(calls);
       const callCount = calls.length;
 
+      // Pull Notes from the CRM tab and stamp as per-person remark.
+      let derived = derivedRows;
+      let remarkCount = 0;
+      try {
+        const crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
+        await yieldEventLoop();
+        const remarks = await loadCrmRemarksByCustomer(crmText);
+        derived = applyRemarksToRows(derivedRows, remarks);
+        remarkCount = remarks.size;
+      } catch (remarkErr) {
+        console.warn('[sheets] CRM Notes merge skipped', remarkErr);
+      }
+
       await saveRawRows(derived, 'google_sheets');
       const rowCount = derived.length;
       let message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} customer rows from published call sheet.`;
+      if (remarkCount) {
+        message += ` Merged Notes remarks for ${remarkCount.toLocaleString()} customers.`;
+      }
       if (errors.length) {
         message += ` ${errors.length} call parse warning(s).`;
       }

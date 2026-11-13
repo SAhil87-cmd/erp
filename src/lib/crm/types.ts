@@ -108,6 +108,8 @@ export interface SalesProcess {
   lastInteractionDate?: string | null;
   /** Latest call calendar day (YYYY-MM-DD) when calls[] is truncated. */
   lastCallDate?: string | null;
+  /** Latest sheet Notes / remark for this person (from CRM tab). */
+  remark?: string;
 }
 
 export interface FollowUpActivity {

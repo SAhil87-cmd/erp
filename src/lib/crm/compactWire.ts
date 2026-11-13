@@ -37,8 +37,9 @@ const CODE_TO_CAT: Record<string, IntelligenceCategory> = {
   '-': 'NONE',
 };
 
-/** [pid, cid, name, mobile, stage, assigned, project, source, catCode, cds, stageEnteredAt, flags, lastIx, lastCall] */
+/** [pid, cid, name, mobile, stage, assigned, project, source, catCode, cds, stageEnteredAt, flags, lastIx, lastCall, remark] */
 export type CompactLeadRow = [
+  string,
   string,
   string,
   string,
@@ -124,6 +125,7 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
       (cls?.underlyingFlags ?? []).map((f) => CAT_TO_CODE[f] ?? '').filter(Boolean).join(''),
       p.lastInteractionDate ?? calendarDateKey(p.stageEnteredAt) ?? '',
       p.lastCallDate ?? '',
+      p.remark ?? '',
     ];
   });
 
@@ -217,6 +219,7 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
     const flagsRaw = row[11] == null ? '' : String(row[11]);
     const lastInteractionDate = row[12] == null ? '' : String(row[12]);
     const lastCallDate = row[13] == null ? '' : String(row[13]);
+    const remark = row[14] == null ? '' : String(row[14]);
     if (!salesProcessId || !customerId) continue;
 
     if (!seenCustomer.has(customerId)) {
@@ -246,6 +249,7 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
       stageHistory: [],
       lastInteractionDate: lastInteractionDate || null,
       lastCallDate: lastCallDate || null,
+      remark: remark || undefined,
     });
 
     const primaryCategory = CODE_TO_CAT[catCode] ?? 'NONE';

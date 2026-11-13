@@ -3,7 +3,10 @@
  */
 
 import { calendarDateKey, todayCalendarKey } from './dates';
-import { buildProcessIdsByCallDay } from './dateIndex';
+import {
+  buildProcessIdsByCallDay,
+  buildProcessIdsByInteractionDay,
+} from './dateIndex';
 import type {
   CallRecord,
   ClassificationResult,
@@ -229,6 +232,7 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
       lastCallByProcess.get(p.salesProcessId) ??
       lastCallByCustomer.get(p.customerId) ??
       null,
+    remark: p.remark,
   }));
 
   return {
@@ -288,7 +292,9 @@ export function slimSnapshotForApi(snapshot: CrmSnapshot): CrmSnapshot {
     todayCallsByExecutive: toExecRows(activityByExec),
     callsByExecutive: toExecRows(allByExec),
     callsByDayByExecutive,
-    processIdsByInteractionDay: snapshot.processIdsByInteractionDay,
+    processIdsByInteractionDay:
+      snapshot.processIdsByInteractionDay ??
+      buildProcessIdsByInteractionDay(snapshot.interactions ?? []),
     processIdsByCallDay: buildProcessIdsByCallDay(calls),
   };
 }

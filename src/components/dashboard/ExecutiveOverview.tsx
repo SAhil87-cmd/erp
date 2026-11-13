@@ -2,10 +2,12 @@
 
 import { useMemo } from 'react';
 import {
+  compareExecutiveRanking,
   computeBookingForecast,
   computeExecutivePerformance,
   computeOverviewMetrics,
   computeRecoveryMetrics,
+  executiveRankingScore,
 } from '@/lib/crm/analytics';
 import { calendarDateKey, isCalendarKeyInRange } from '@/lib/crm/dates';
 import {
@@ -51,12 +53,53 @@ export function ExecutiveOverview() {
     const recovery = usePrecomputed
       ? snapshot.recoveryMetrics ?? computeRecoveryMetrics(filtered.classifications)
       : computeRecoveryMetrics(filtered.classifications);
+    const todayCalls = new Map(
+      (snapshot.todayCallsByExecutive ?? []).map((r) => [
+        r.executiveName.toLowerCase(),
+        r.callCount,
+      ]),
+    );
+    const totalCalls = new Map(
+      (snapshot.callsByExecutive ?? []).map((r) => [
+        r.executiveName.toLowerCase(),
+        r.callCount,
+      ]),
+    );
     const execs = (
       usePrecomputed && snapshot.executivePerformance
         ? snapshot.executivePerformance
         : computeExecutivePerformance(filtered)
     )
-      .sort((a, b) => b.processCount - a.processCount)
+      .map((r) => {
+        const intentCount =
+          r.intentCount ??
+          (r.highIntentCount ?? 0) + (r.veryHighIntentCount ?? 0);
+        const mismarkedNiCount = r.mismarkedNiCount ?? 0;
+        const goneDarkCount = r.goneDarkCount ?? 0;
+        const key = r.executiveName.toLowerCase();
+        const callsToday = todayCalls.get(key) ?? 0;
+        const callsTotal = totalCalls.get(key) ?? 0;
+        const callsForRank = callsToday > 0 ? callsToday : callsTotal;
+        const rankingScore = executiveRankingScore({
+          closedCount: r.closedCount,
+          conversionRate: r.conversionRate,
+          processCount: r.processCount,
+          mismarkedNiCount,
+          goneDarkCount,
+          intentCount,
+          calls: callsForRank,
+        });
+        return {
+          ...r,
+          mismarkedNiCount,
+          goneDarkCount,
+          intentCount,
+          rankingScore,
+          callsToday,
+          callsTotal,
+        };
+      })
+      .sort(compareExecutiveRanking)
       .slice(0, 8);
     const insufficient = usePrecomputed
       ? 0
@@ -278,13 +321,16 @@ export function ExecutiveOverview() {
         <ChartCard title="Intelligence categories">
           <SimpleBarChart data={derived.categoryData} color="#dc2626" />
         </ChartCard>
-        <ChartCard title="Executive load (top)">
+        <ChartCard
+          title="Executive ranking (top)"
+          subtitle="Conversion + closed; GD / Mismarked NI by rate"
+        >
           <SimpleBarChart
             data={derived.execs.map((e) => ({
               name: e.executiveName.split(' ')[0],
-              value: e.processCount,
+              value: Math.round(e.rankingScore),
             }))}
-            color="#2563eb"
+            color="#0d9488"
           />
         </ChartCard>
         <ChartCard title="Project mix">
