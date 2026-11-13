@@ -36,31 +36,41 @@ let bytes = 0;
 let lastLog = 0;
 const lines = [];
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-  bytes += value.byteLength;
-  const now = Date.now();
-  if (now - lastLog > 4000) {
-    console.log(`t=${((now - started) / 1000).toFixed(0)}s bytes=${bytes}`);
-    lastLog = now;
-  }
-  buffer += decoder.decode(value, { stream: true });
-  const parts = buffer.split('\n');
-  buffer = parts.pop() ?? '';
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    lines.push(trimmed);
-    try {
-      const row = JSON.parse(trimmed);
-      if (row.phase && row.phase !== 'working') {
-        console.log('phase', row.phase, row.error || '');
+try {
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    const now = Date.now();
+    if (now - lastLog > 4000) {
+      console.log(`t=${((now - started) / 1000).toFixed(0)}s bytes=${bytes}`);
+      lastLog = now;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n');
+    buffer = parts.pop() ?? '';
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      lines.push(trimmed);
+      try {
+        const row = JSON.parse(trimmed);
+        if (row.phase && row.phase !== 'working') {
+          console.log(
+            'phase',
+            row.phase,
+            row.bootstrap ? 'bootstrap' : '',
+            row.light ? 'light' : '',
+            row.error || '',
+          );
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
   }
+} catch (err) {
+  console.log('stream_reset', err instanceof Error ? err.message : err);
 }
 const trailing = buffer.trim();
 if (trailing) lines.push(trailing);

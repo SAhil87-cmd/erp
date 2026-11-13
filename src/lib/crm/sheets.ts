@@ -166,34 +166,29 @@ async function doSyncFromPublishedSheet(
     // Default path: calls tab only. Importing the full 47k-row CRM tab OOMs / times
     // out on Vercel serverless — derive customers from the call export instead.
     if (!urlOverride) {
-      const callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
+      // Exact parity with localhost: import the full call sheet (no day/count caps)
+      // and merge CRM Notes remarks on every environment.
+      let callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
       await yieldEventLoop();
-      // Vercel: only keep ~60 days / 20k calls so parse+classify fits in memory.
-      const onVercel = Boolean(process.env.VERCEL);
-      const { calls, errors, derivedRows } = await importPublishedCallSheetAsync(
-        callsText,
-        onVercel ? { maxAgeDays: 60, maxCalls: 20_000 } : undefined,
-      );
+      const { calls, errors, derivedRows } =
+        await importPublishedCallSheetAsync(callsText);
+      callsText = '';
       await yieldEventLoop();
       await saveCalls(calls);
       const callCount = calls.length;
 
       // Pull Notes from the CRM tab and stamp as per-person remark.
-      // On Vercel this second large CSV can push the request over platform limits —
-      // skip there so the primary call sync finishes reliably; localhost still merges.
       let derived = derivedRows;
       let remarkCount = 0;
-      const mergeRemarks = !onVercel;
-      if (mergeRemarks) {
-        try {
-          const crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
-          await yieldEventLoop();
-          const remarks = await loadCrmRemarksByCustomer(crmText);
-          derived = applyRemarksToRows(derivedRows, remarks);
-          remarkCount = remarks.size;
-        } catch (remarkErr) {
-          console.warn('[sheets] CRM Notes merge skipped', remarkErr);
-        }
+      try {
+        let crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
+        await yieldEventLoop();
+        const remarks = await loadCrmRemarksByCustomer(crmText);
+        crmText = '';
+        derived = applyRemarksToRows(derivedRows, remarks);
+        remarkCount = remarks.size;
+      } catch (remarkErr) {
+        console.warn('[sheets] CRM Notes merge skipped', remarkErr);
       }
 
       await saveRawRows(derived, 'google_sheets');

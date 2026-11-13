@@ -282,16 +282,8 @@ async function buildSnapshotFromStore(
     loadSyncMeta(),
   ]);
 
-  // Vercel serverless memory is tight — keep ~120 days of calls for classify/aggregates.
-  let calls = loadedCalls;
-  if (IS_VERCEL && loadedCalls.length > 25_000) {
-    const cutoff = Date.now() - 120 * 86_400_000;
-    calls = loadedCalls.filter((c) => {
-      const ms = Date.parse(c.callAt || c.callDate || '');
-      return Number.isFinite(ms) && ms >= cutoff;
-    });
-    if (calls.length < 1_000) calls = loadedCalls.slice(-25_000);
-  }
+  // Exact parity: always classify/aggregate against the full imported call set.
+  const calls = loadedCalls;
 
   const model = buildRelationalModel(rawRows);
 
@@ -411,7 +403,8 @@ async function buildSnapshotFromStore(
 
   if (IS_VERCEL) {
     if (opts.stageOnly) {
-      // Avoid walking tens of thousands of calls during the first paint pack.
+      // First-paint pack: sample calls only for chart preview speed. Exact
+      // callTotal + full aggregates are restored after classify upgrade.
       const callSample =
         calls.length > 8_000
           ? [...calls]
@@ -425,8 +418,9 @@ async function buildSnapshotFromStore(
       memory().snapshot = slim;
       return slim;
     }
-    // Pass calls only into slimmer for today/exec aggregates, then drop the fat copy.
+    // Full path: walk every call for exact today/exec aggregates, then drop the fat copy.
     const slim = slimSnapshotForApi({ ...snapshot, calls });
+    slim.callTotal = syncMeta.callCount ?? loadedCalls.length ?? calls.length;
     memory().snapshot = slim;
     return slim;
   }
@@ -465,6 +459,13 @@ export function attachClassifications(
   snap.classifications = classifications;
   memory().snapshot = snap;
   return snap;
+}
+
+/** Replace the whole cached slim snapshot (Vercel classify upgrade with exact aggregates). */
+export function replaceCachedSnapshot(snapshot: CrmSnapshot): void {
+  if (IS_VERCEL) {
+    memory().snapshot = snapshot;
+  }
 }
 
 export async function loadCallsForCustomer(

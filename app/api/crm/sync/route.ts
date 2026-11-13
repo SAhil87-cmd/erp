@@ -12,11 +12,11 @@ import { classifyAllProcessesAsync } from '@/lib/crm/classification/engine';
 import { slimClassification } from '@/lib/crm/slimSnapshot';
 import {
   applyOverridesToClassifications,
-  attachClassifications,
   loadCalls,
   loadOverrides,
   loadSnapshot,
   loadStageOnlySnapshot,
+  replaceCachedSnapshot,
 } from '@/lib/crm/store';
 import type { CrmSnapshot } from '@/lib/crm/types';
 
@@ -328,17 +328,10 @@ export async function POST(req: NextRequest) {
                 stageOnly: true,
               });
 
-              // Upgrade: classify against stored calls and resend full intelligence KPIs.
+              // Upgrade: classify against the FULL call set (exact parity with localhost).
               send({ ok: true, phase: 'classifying', t: Date.now() });
               try {
                 let calls = await loadCalls();
-                if (calls.length > 15_000) {
-                  calls = [...calls]
-                    .sort((a, b) =>
-                      String(b.callAt || '').localeCompare(String(a.callAt || '')),
-                    )
-                    .slice(0, 15_000);
-                }
                 const engineClassifications = await awaitWithHeartbeats(
                   send,
                   'classifying',
@@ -353,7 +346,6 @@ export async function POST(req: NextRequest) {
                     calls,
                   ),
                 );
-                calls = [];
                 const overrides = await loadOverrides();
                 const withOverrides = applyOverridesToClassifications(
                   engineClassifications,
@@ -369,12 +361,17 @@ export async function POST(req: NextRequest) {
                   }),
                 );
                 const classifications = withOverrides.map(slimClassification);
-                const upgradedSnap =
-                  attachClassifications(classifications) ?? {
-                    ...stageSnap,
-                    classifications,
-                  };
-                const richWire = toOverviewWire(upgradedSnap, {
+                // Rebuild call aggregates from every call so KPIs match localhost exactly.
+                const exactSlim = slimSnapshotForApi({
+                  ...stageSnap,
+                  classifications,
+                  calls,
+                });
+                exactSlim.callTotal =
+                  slimMeta.callCount ?? calls.length ?? exactSlim.callTotal;
+                calls = [];
+                replaceCachedSnapshot(exactSlim);
+                const richWire = toOverviewWire(exactSlim, {
                   omitLeads: false,
                 });
                 snapshot = richWire;
