@@ -410,6 +410,21 @@ async function buildSnapshotFromStore(
   };
 
   if (IS_VERCEL) {
+    if (opts.stageOnly) {
+      // Avoid walking tens of thousands of calls during the first paint pack.
+      const callSample =
+        calls.length > 8_000
+          ? [...calls]
+              .sort((a, b) =>
+                String(b.callAt || '').localeCompare(String(a.callAt || '')),
+              )
+              .slice(0, 8_000)
+          : calls;
+      const slim = slimSnapshotForApi({ ...snapshot, calls: callSample });
+      slim.callTotal = syncMeta.callCount ?? loadedCalls.length ?? calls.length;
+      memory().snapshot = slim;
+      return slim;
+    }
     // Pass calls only into slimmer for today/exec aggregates, then drop the fat copy.
     const slim = slimSnapshotForApi({ ...snapshot, calls });
     memory().snapshot = slim;

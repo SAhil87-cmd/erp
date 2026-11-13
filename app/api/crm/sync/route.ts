@@ -229,6 +229,78 @@ export async function POST(req: NextRequest) {
               rowCount: rowTotal,
               callCount: callTotal,
             };
+
+            // Tiny count pack first — guarantees the browser gets *something*
+            // before any heavy snapshot work.
+            try {
+              const countWire = {
+                v: 1 as const,
+                pack: 'overview' as const,
+                builtAt: new Date().toISOString(),
+                syncMeta: slimMeta,
+                callTotal,
+                interactionTotal: rowTotal,
+                leads: [] as [],
+                followUps: [] as [],
+                calls: [] as [],
+                projects: [] as string[],
+                executives: [] as string[],
+                reviews: [] as [],
+                overrides: [] as [],
+                dataHealth: {
+                  totalRows: rowTotal,
+                  validCustomers: rowTotal,
+                  unmatchedRows: 0,
+                  duplicateCustomerIds: [] as string[],
+                  duplicatePhones: [] as string[],
+                  missingCustomerIds: 0,
+                  missingPhones: 0,
+                  issues: [] as string[],
+                },
+                overviewMetrics: {
+                  totalCustomers: rowTotal,
+                  totalProcesses: rowTotal,
+                  totalInteractions: rowTotal,
+                  totalCalls: callTotal,
+                  byStage: {},
+                  byCategory: {
+                    GONE_DARK: 0,
+                    NOT_PICKING_UP: 0,
+                    MISMARKED_NI: 0,
+                    STUCK: 0,
+                    VERY_HIGH_INTENT: 0,
+                    HIGH_INTENT: 0,
+                    NONE: 0,
+                  },
+                  salesClosed: 0,
+                  notInterested: 0,
+                  conversionRate: 0,
+                  conversionDenominator: 0,
+                  conversionNumerator: 0,
+                  conversionDenominatorDescription:
+                    'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
+                },
+              };
+              snapshot = countWire;
+              snapshotEncoding = null;
+              pack = 'overview';
+              send({
+                ok: true,
+                phase: 'done',
+                result: resultLite,
+                syncMeta: slimMeta,
+                pack,
+                snapshotEncoding: null,
+                snapshot: countWire,
+                snapshotError: null,
+                light: true,
+                bootstrap: true,
+                countsOnly: true,
+              });
+            } catch (countErr) {
+              console.warn('[api/crm/sync] count bootstrap skipped', countErr);
+            }
+
             try {
               const stageSnap = packSnapshot(
                 await awaitWithHeartbeats(
