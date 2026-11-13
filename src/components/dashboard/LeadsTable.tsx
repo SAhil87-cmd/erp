@@ -11,6 +11,7 @@ type SortKey =
   | 'stage'
   | 'assignedTo'
   | 'category'
+  | 'lastActivityAt'
   | 'stageEnteredAt';
 
 export function LeadsTable({
@@ -22,8 +23,9 @@ export function LeadsTable({
 }) {
   const setSelectedLead = useCrmStore((s) => s.setSelectedLead);
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  // Default: newest leads / latest activity first.
+  const [sortKey, setSortKey] = useState<SortKey>('lastActivityAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
   const pageSize = 25;
 
@@ -48,8 +50,14 @@ export function LeadsTable({
       );
     }
     list = [...list].sort((a, b) => {
-      const av = String(a[sortKey] ?? '');
-      const bv = String(b[sortKey] ?? '');
+      const av =
+        sortKey === 'lastActivityAt'
+          ? String(a.lastActivityAt || a.stageEnteredAt || '')
+          : String(a[sortKey] ?? '');
+      const bv =
+        sortKey === 'lastActivityAt'
+          ? String(b.lastActivityAt || b.stageEnteredAt || '')
+          : String(b[sortKey] ?? '');
       const cmp = av.localeCompare(bv, undefined, { sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -122,6 +130,11 @@ export function LeadsTable({
                   <th>Remark</th>
                   <th>Next action</th>
                   <th>
+                    <button type="button" onClick={() => toggleSort('lastActivityAt')}>
+                      Latest
+                    </button>
+                  </th>
+                  <th>
                     <button type="button" onClick={() => toggleSort('stageEnteredAt')}>
                       Stage since
                     </button>
@@ -161,6 +174,7 @@ export function LeadsTable({
                       {row.remark || '—'}
                     </td>
                     <td className="cell-clamp">{row.recommendedAction}</td>
+                    <td>{formatDate(row.lastActivityAt || row.stageEnteredAt)}</td>
                     <td>{formatDate(row.stageEnteredAt)}</td>
                   </tr>
                 ))}

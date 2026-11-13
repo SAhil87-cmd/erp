@@ -24,9 +24,23 @@ export interface LeadRow {
   /** Sheet Notes column for this person. */
   remark: string;
   stageEnteredAt: string | null;
+  /** Newest of last interaction / last call / stage entry — used for latest-first lists. */
+  lastActivityAt: string | null;
   customer: Customer;
   process: SalesProcess;
   classification: ClassificationResult;
+}
+
+function latestActivityAt(process: SalesProcess): string | null {
+  const candidates = [
+    process.lastInteractionDate,
+    process.lastCallDate,
+    process.stageEnteredAt,
+  ]
+    .map((v) => (v ? String(v) : ''))
+    .filter(Boolean);
+  if (candidates.length === 0) return null;
+  return candidates.sort((a, b) => b.localeCompare(a))[0] ?? null;
 }
 
 export function filterSnapshotClient(
@@ -103,10 +117,17 @@ export function buildLeadRows(
       reason,
       remark: process.remark?.trim() || '',
       stageEnteredAt: process.stageEnteredAt,
+      lastActivityAt: latestActivityAt(process),
       customer,
       process,
       classification,
     });
   }
-  return rows;
+
+  // Latest activity first across All Leads / category tabs / etc.
+  return rows.sort((a, b) => {
+    const av = a.lastActivityAt || a.stageEnteredAt || '';
+    const bv = b.lastActivityAt || b.stageEnteredAt || '';
+    return bv.localeCompare(av);
+  });
 }

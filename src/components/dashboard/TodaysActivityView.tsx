@@ -26,12 +26,18 @@ export function TodaysActivityView() {
       };
     }
     const filtered = filterSnapshotClient(snapshot, filters);
-    const interactions = filtered.interactions.filter(
-      (ix) => calendarDateKey(ix.interactionDate) === today,
-    );
-    const calls = filtered.calls.filter(
-      (c) => calendarDateKey(c.callAt || c.callDate || null) === today,
-    );
+    const interactions = filtered.interactions
+      .filter((ix) => calendarDateKey(ix.interactionDate) === today)
+      .sort((a, b) =>
+        String(b.interactionDate || '').localeCompare(String(a.interactionDate || '')),
+      );
+    const calls = filtered.calls
+      .filter((c) => calendarDateKey(c.callAt || c.callDate || null) === today)
+      .sort((a, b) =>
+        String(b.callAt || b.callDate || '').localeCompare(
+          String(a.callAt || a.callDate || ''),
+        ),
+      );
     // Prefer server full-count (from unslimmed store); fall back to filtered preview.
     const callCount =
       !filters.executives?.length &&
