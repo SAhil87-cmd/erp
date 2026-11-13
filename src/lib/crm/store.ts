@@ -275,13 +275,24 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     return memory().snapshot!;
   }
 
-  const [rawRows, calls, reviews, overrides, syncMeta] = await Promise.all([
+  const [rawRows, loadedCalls, reviews, overrides, syncMeta] = await Promise.all([
     loadRawRows(),
     loadCalls(),
     loadReviews(),
     loadOverrides(),
     loadSyncMeta(),
   ]);
+
+  // Vercel serverless memory is tight — keep ~120 days of calls for classify/aggregates.
+  let calls = loadedCalls;
+  if (IS_VERCEL && loadedCalls.length > 25_000) {
+    const cutoff = Date.now() - 120 * 86_400_000;
+    calls = loadedCalls.filter((c) => {
+      const ms = Date.parse(c.callAt || c.callDate || '');
+      return Number.isFinite(ms) && ms >= cutoff;
+    });
+    if (calls.length < 1_000) calls = loadedCalls.slice(-25_000);
+  }
 
   const model = buildRelationalModel(rawRows);
 

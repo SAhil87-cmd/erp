@@ -190,6 +190,84 @@ export async function POST(req: NextRequest) {
         let pack: 'overview' | 'full' | null = null;
 
         if (body.includeSnapshot !== false) {
+          // Immediate bootstrap pack from sync counts so the UI is never blank
+          // if full classify/snapshot OOMs on Vercel.
+          try {
+            const callTotal =
+              result.callCount ??
+              (syncMeta as { callCount?: number }).callCount ??
+              0;
+            const rowTotal =
+              result.rowCount ??
+              (syncMeta as { rowCount?: number }).rowCount ??
+              0;
+            const bootWire = {
+              v: 1 as const,
+              pack: 'overview' as const,
+              builtAt: new Date().toISOString(),
+              syncMeta,
+              callTotal,
+              interactionTotal: rowTotal,
+              leads: [] as [],
+              followUps: [] as [],
+              calls: [] as [],
+              projects: [] as string[],
+              executives: [] as string[],
+              reviews: [] as [],
+              overrides: [] as [],
+              dataHealth: {
+                totalRows: rowTotal,
+                validCustomers: rowTotal,
+                unmatchedRows: 0,
+                duplicateCustomerIds: [] as string[],
+                duplicatePhones: [] as string[],
+                missingCustomerIds: 0,
+                missingPhones: 0,
+                issues: [] as string[],
+              },
+              overviewMetrics: {
+                totalCustomers: rowTotal,
+                totalProcesses: rowTotal,
+                totalInteractions: rowTotal,
+                totalCalls: callTotal,
+                byStage: {},
+                byCategory: {
+                  GONE_DARK: 0,
+                  NOT_PICKING_UP: 0,
+                  MISMARKED_NI: 0,
+                  STUCK: 0,
+                  VERY_HIGH_INTENT: 0,
+                  HIGH_INTENT: 0,
+                  NONE: 0,
+                },
+                salesClosed: 0,
+                notInterested: 0,
+                conversionRate: 0,
+                conversionDenominator: 0,
+                conversionNumerator: 0,
+                conversionDenominatorDescription:
+                  'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
+              },
+            };
+            snapshot = gzipWire(bootWire);
+            snapshotEncoding = 'gzip-base64';
+            pack = 'overview';
+            send({
+              ok: true,
+              phase: 'done',
+              result,
+              syncMeta,
+              pack,
+              snapshotEncoding,
+              snapshot,
+              snapshotError: null,
+              light: true,
+              bootstrap: true,
+            });
+          } catch (bootErr) {
+            console.warn('[api/crm/sync] bootstrap pack skipped', bootErr);
+          }
+
           try {
             const loaded = await awaitWithHeartbeats(
               send,
