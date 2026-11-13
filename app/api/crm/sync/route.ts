@@ -8,7 +8,7 @@ import {
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
 import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
-import { loadSnapshot } from '@/lib/crm/store';
+import { loadSnapshot, loadStageOnlySnapshot } from '@/lib/crm/store';
 import type { CrmSnapshot } from '@/lib/crm/types';
 
 /** Always slim before wire — localhost fat snapshots lack activityDate / day indexes. */
@@ -96,14 +96,14 @@ export async function POST(req: NextRequest) {
       let snapshotError: string | null = null;
       let pack: 'overview' | 'full' | null = null;
       if (body.includeSnapshot !== false) {
-        const full = packSnapshot(await loadSnapshot());
-        const useFull = body.pack === 'full';
-        // Non-stream path: prefer light overview on Vercel to avoid OOM/timeouts.
-        const omitLeads =
-          !useFull && process.env.VERCEL === '1';
+        const onVercel = process.env.VERCEL === '1';
+        const full = packSnapshot(
+          await (onVercel ? loadStageOnlySnapshot() : loadSnapshot()),
+        );
+        const useFull = body.pack === 'full' && !onVercel;
         const wire = useFull
           ? toCompactWire(full)
-          : toOverviewWire(full, { omitLeads });
+          : toOverviewWire(full, { omitLeads: false });
         pack = useFull ? 'full' : 'overview';
         snapshot = gzipWire(wire);
         snapshotEncoding = 'gzip-base64';
@@ -189,8 +189,6 @@ export async function POST(req: NextRequest) {
 
         if (body.includeSnapshot !== false) {
           const onVercel = Boolean(process.env.VERCEL);
-          // Bootstrap FIRST (plain JSON snapshot — no gzip) and flush before any
-          // classify work. Vercel OOMs during loadSnapshot and resets the socket.
           const callTotal =
             result.callCount ??
             (syncMeta as { callCount?: number }).callCount ??
@@ -211,80 +209,112 @@ export async function POST(req: NextRequest) {
               (syncMeta as { latestDataAt?: string | null }).latestDataAt ??
               undefined,
           };
-          const bootWire = {
-            v: 1 as const,
-            pack: 'overview' as const,
-            builtAt: new Date().toISOString(),
-            syncMeta: slimMeta,
-            callTotal,
-            interactionTotal: rowTotal,
-            leads: [] as [],
-            followUps: [] as [],
-            calls: [] as [],
-            projects: [] as string[],
-            executives: [] as string[],
-            reviews: [] as [],
-            overrides: [] as [],
-            dataHealth: {
-              totalRows: rowTotal,
-              validCustomers: rowTotal,
-              unmatchedRows: 0,
-              duplicateCustomerIds: [] as string[],
-              duplicatePhones: [] as string[],
-              missingCustomerIds: 0,
-              missingPhones: 0,
-              issues: [] as string[],
-            },
-            overviewMetrics: {
-              totalCustomers: rowTotal,
-              totalProcesses: rowTotal,
-              totalInteractions: rowTotal,
-              totalCalls: callTotal,
-              byStage: {},
-              byCategory: {
-                GONE_DARK: 0,
-                NOT_PICKING_UP: 0,
-                MISMARKED_NI: 0,
-                STUCK: 0,
-                VERY_HIGH_INTENT: 0,
-                HIGH_INTENT: 0,
-                NONE: 0,
-              },
-              salesClosed: 0,
-              notInterested: 0,
-              conversionRate: 0,
-              conversionDenominator: 0,
-              conversionNumerator: 0,
-              conversionDenominatorDescription:
-                'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
-            },
-          };
-          // Plain object — client resolveApiSnapshot accepts non-gzip snapshots.
-          snapshot = bootWire;
-          snapshotEncoding = null;
-          pack = 'overview';
-          send({
-            ok: true,
-            phase: 'done',
-            result: {
-              status: result.status,
-              message: result.message,
-              rowCount: rowTotal,
-              callCount: callTotal,
-            },
-            syncMeta: slimMeta,
-            pack,
-            snapshotEncoding: null,
-            snapshot: bootWire,
-            snapshotError: null,
-            light: true,
-            bootstrap: true,
-          });
-          // Let the platform flush NDJSON to the browser before more work.
-          await new Promise((r) => setTimeout(r, 750));
 
-          // Vercel: never run full classify in this request (OOM → Network error).
+          // Vercel: stage-only snapshot (no classify) — conversion, stages, ranking
+          // without OOM. Ship plain JSON so the client hydrates even if gzip fails.
           if (onVercel) {
+            send({ ok: true, phase: 'building-dashboard', t: Date.now() });
+            try {
+              const stageSnap = packSnapshot(
+                await awaitWithHeartbeats(
+                  send,
+                  'building-dashboard',
+                  loadStageOnlySnapshot(),
+                ),
+              );
+              const bootWire = toOverviewWire(stageSnap, { omitLeads: false });
+              snapshot = bootWire;
+              snapshotEncoding = null;
+              pack = 'overview';
+              send({
+                ok: true,
+                phase: 'done',
+                result: {
+                  status: result.status,
+                  message: result.message,
+                  rowCount: rowTotal,
+                  callCount: callTotal,
+                },
+                syncMeta: slimMeta,
+                pack,
+                snapshotEncoding: null,
+                snapshot: bootWire,
+                snapshotError: null,
+                light: false,
+                bootstrap: true,
+                stageOnly: true,
+              });
+            } catch (stageErr) {
+              console.error('[api/crm/sync] stage-only bootstrap failed', stageErr);
+              const bootWire = {
+                v: 1 as const,
+                pack: 'overview' as const,
+                builtAt: new Date().toISOString(),
+                syncMeta: slimMeta,
+                callTotal,
+                interactionTotal: rowTotal,
+                leads: [] as [],
+                followUps: [] as [],
+                calls: [] as [],
+                projects: [] as string[],
+                executives: [] as string[],
+                reviews: [] as [],
+                overrides: [] as [],
+                dataHealth: {
+                  totalRows: rowTotal,
+                  validCustomers: rowTotal,
+                  unmatchedRows: 0,
+                  duplicateCustomerIds: [] as string[],
+                  duplicatePhones: [] as string[],
+                  missingCustomerIds: 0,
+                  missingPhones: 0,
+                  issues: [] as string[],
+                },
+                overviewMetrics: {
+                  totalCustomers: rowTotal,
+                  totalProcesses: rowTotal,
+                  totalInteractions: rowTotal,
+                  totalCalls: callTotal,
+                  byStage: {},
+                  byCategory: {
+                    GONE_DARK: 0,
+                    NOT_PICKING_UP: 0,
+                    MISMARKED_NI: 0,
+                    STUCK: 0,
+                    VERY_HIGH_INTENT: 0,
+                    HIGH_INTENT: 0,
+                    NONE: 0,
+                  },
+                  salesClosed: 0,
+                  notInterested: 0,
+                  conversionRate: 0,
+                  conversionDenominator: 0,
+                  conversionNumerator: 0,
+                  conversionDenominatorDescription:
+                    'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
+                },
+              };
+              snapshot = bootWire;
+              snapshotEncoding = null;
+              pack = 'overview';
+              send({
+                ok: true,
+                phase: 'done',
+                result: {
+                  status: result.status,
+                  message: result.message,
+                  rowCount: rowTotal,
+                  callCount: callTotal,
+                },
+                syncMeta: slimMeta,
+                pack,
+                snapshotEncoding: null,
+                snapshot: bootWire,
+                snapshotError: null,
+                light: true,
+                bootstrap: true,
+              });
+            }
             return;
           }
 

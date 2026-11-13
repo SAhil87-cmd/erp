@@ -266,15 +266,14 @@ export function applyOverridesToClassifications(
   });
 }
 
-/**
- * Build a dashboard snapshot. On Vercel, skip huge per-customer call id lists and
- * immediately slim for API so sync responses don't OOM the serverless worker.
- */
-export async function loadSnapshot(): Promise<CrmSnapshot> {
-  if (IS_VERCEL && memory().snapshot) {
-    return memory().snapshot!;
-  }
+type SnapshotBuildOpts = {
+  /** Skip call-aware classify (Vercel-safe). Stage/conversion KPIs still work. */
+  stageOnly?: boolean;
+};
 
+async function buildSnapshotFromStore(
+  opts: SnapshotBuildOpts = {},
+): Promise<CrmSnapshot> {
   const [rawRows, loadedCalls, reviews, overrides, syncMeta] = await Promise.all([
     loadRawRows(),
     loadCalls(),
@@ -341,32 +340,35 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
     model.interactions = [];
   }
 
-  const engineClassifications = await classifyAllProcessesAsync(
-    model.processes.map((p) => ({
-      customerId: p.customerId,
-      salesProcessId: p.salesProcessId,
-      currentStage: p.currentStage,
-      stageEnteredAt: p.stageEnteredAt,
-      stageHistory: p.stageHistory,
-    })),
-    calls,
-  );
+  let classifications: ClassificationResult[] = [];
+  if (!opts.stageOnly) {
+    const engineClassifications = await classifyAllProcessesAsync(
+      model.processes.map((p) => ({
+        customerId: p.customerId,
+        salesProcessId: p.salesProcessId,
+        currentStage: p.currentStage,
+        stageEnteredAt: p.stageEnteredAt,
+        stageHistory: p.stageHistory,
+      })),
+      calls,
+    );
 
-  let classifications = applyOverridesToClassifications(
-    engineClassifications,
-    overrides.map((o) => {
-      if (o.originalCategory) return o;
-      const orig = engineClassifications.find(
-        (c) =>
-          c.customerId === o.customerId &&
-          (!o.salesProcessId || c.salesProcessId === o.salesProcessId),
-      );
-      return { ...o, originalCategory: orig?.primaryCategory };
-    }),
-  );
+    classifications = applyOverridesToClassifications(
+      engineClassifications,
+      overrides.map((o) => {
+        if (o.originalCategory) return o;
+        const orig = engineClassifications.find(
+          (c) =>
+            c.customerId === o.customerId &&
+            (!o.salesProcessId || c.salesProcessId === o.salesProcessId),
+        );
+        return { ...o, originalCategory: orig?.primaryCategory };
+      }),
+    );
 
-  if (IS_VERCEL) {
-    classifications = classifications.map(slimClassification);
+    if (IS_VERCEL) {
+      classifications = classifications.map(slimClassification);
+    }
   }
 
   // Avoid allocating tens of thousands of call-id arrays on Vercel (OOM risk).
@@ -415,6 +417,25 @@ export async function loadSnapshot(): Promise<CrmSnapshot> {
   }
 
   return snapshot;
+}
+
+/**
+ * Stage/conversion snapshot without call-aware classify.
+ * Safe on Vercel where full classify OOMs the worker.
+ */
+export async function loadStageOnlySnapshot(): Promise<CrmSnapshot> {
+  return buildSnapshotFromStore({ stageOnly: true });
+}
+
+/**
+ * Build a dashboard snapshot. On Vercel, skip huge per-customer call id lists and
+ * immediately slim for API so sync responses don't OOM the serverless worker.
+ */
+export async function loadSnapshot(): Promise<CrmSnapshot> {
+  if (IS_VERCEL && memory().snapshot) {
+    return memory().snapshot!;
+  }
+  return buildSnapshotFromStore({ stageOnly: false });
 }
 
 export async function loadCallsForCustomer(
