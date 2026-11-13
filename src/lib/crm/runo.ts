@@ -473,7 +473,7 @@ export async function importPublishedCallSheetAsync(
 
         idx += 1;
         sinceYield += 1;
-        if (sinceYield >= 1200) {
+        if (sinceYield >= 600) {
           sinceYield = 0;
           parser.pause();
           setImmediate(() => parser.resume());

@@ -6,7 +6,11 @@ import {
   computeRecoveryMetrics,
 } from '@/lib/crm/analytics';
 import { toCompactWire } from '@/lib/crm/compactWire';
-import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
+import {
+  getSyncStatus,
+  mergePublishedCrmRemarks,
+  syncFromGoogleSheets,
+} from '@/lib/crm/sheets';
 import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
 import { classifyAllProcessesAsync } from '@/lib/crm/classification/engine';
 import { slimClassification } from '@/lib/crm/slimSnapshot';
@@ -208,7 +212,7 @@ export async function POST(req: NextRequest) {
             result.rowCount ??
             (syncMeta as { rowCount?: number }).rowCount ??
             0;
-          const slimMeta = {
+          let slimMeta = {
             lastSyncAt: (syncMeta as { lastSyncAt?: string }).lastSyncAt ?? undefined,
             lastImportAt:
               (syncMeta as { lastImportAt?: string }).lastImportAt ?? undefined,
@@ -225,7 +229,7 @@ export async function POST(req: NextRequest) {
           // with call-aware classify (Gone Dark / Mismarked NI / Intent) when memory allows.
           if (onVercel) {
             send({ ok: true, phase: 'building-dashboard', t: Date.now() });
-            const resultLite = {
+            let resultLite = {
               status: result.status,
               message: result.message,
               rowCount: rowTotal,
@@ -304,6 +308,31 @@ export async function POST(req: NextRequest) {
             }
 
             try {
+              // Merge CRM Notes before stage build so process.remark matches localhost.
+              try {
+                send({ ok: true, phase: 'merging-remarks', t: Date.now() });
+                const remarkResult = await awaitWithHeartbeats(
+                  send,
+                  'merging-remarks',
+                  mergePublishedCrmRemarks(),
+                );
+                resultLite = {
+                  ...resultLite,
+                  message: `${resultLite.message} Merged Notes remarks for ${remarkResult.remarkCount.toLocaleString()} customers.`,
+                };
+                const metaAfter = await getSyncStatus();
+                slimMeta = {
+                  ...slimMeta,
+                  lastSyncAt: metaAfter.lastSyncAt ?? slimMeta.lastSyncAt,
+                  lastImportAt: metaAfter.lastImportAt ?? slimMeta.lastImportAt,
+                  status: metaAfter.status ?? slimMeta.status,
+                  callCount: callTotal,
+                  rowCount: rowTotal,
+                };
+              } catch (remarkErr) {
+                console.warn('[api/crm/sync] remarks merge skipped', remarkErr);
+              }
+
               const stageSnap = packSnapshot(
                 await awaitWithHeartbeats(
                   send,

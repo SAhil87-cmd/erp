@@ -166,8 +166,8 @@ async function doSyncFromPublishedSheet(
     // Default path: calls tab only. Importing the full 47k-row CRM tab OOMs / times
     // out on Vercel serverless — derive customers from the call export instead.
     if (!urlOverride) {
-      // Exact parity with localhost: import the full call sheet (no day/count caps)
-      // and merge CRM Notes remarks on every environment.
+      // Exact parity: full call sheet (no day/count caps). CRM Notes are merged
+      // in a second pass (mergePublishedCrmRemarks) so Vercel can heartbeat between.
       let callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
       await yieldEventLoop();
       const { calls, errors, derivedRows } =
@@ -177,18 +177,21 @@ async function doSyncFromPublishedSheet(
       await saveCalls(calls);
       const callCount = calls.length;
 
-      // Pull Notes from the CRM tab and stamp as per-person remark.
+      // Localhost: merge Notes in-process. Vercel: deferred (see sync route) so the
+      // connection stays alive and peak RAM stays under the platform limit.
       let derived = derivedRows;
       let remarkCount = 0;
-      try {
-        let crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
-        await yieldEventLoop();
-        const remarks = await loadCrmRemarksByCustomer(crmText);
-        crmText = '';
-        derived = applyRemarksToRows(derivedRows, remarks);
-        remarkCount = remarks.size;
-      } catch (remarkErr) {
-        console.warn('[sheets] CRM Notes merge skipped', remarkErr);
+      if (!process.env.VERCEL) {
+        try {
+          let crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
+          await yieldEventLoop();
+          const remarks = await loadCrmRemarksByCustomer(crmText);
+          crmText = '';
+          derived = applyRemarksToRows(derivedRows, remarks);
+          remarkCount = remarks.size;
+        } catch (remarkErr) {
+          console.warn('[sheets] CRM Notes merge skipped', remarkErr);
+        }
       }
 
       await saveRawRows(derived, 'google_sheets');
@@ -196,6 +199,8 @@ async function doSyncFromPublishedSheet(
       let message = `Synced ${callCount.toLocaleString()} calls and ${rowCount.toLocaleString()} customer rows from published call sheet.`;
       if (remarkCount) {
         message += ` Merged Notes remarks for ${remarkCount.toLocaleString()} customers.`;
+      } else if (process.env.VERCEL) {
+        message += ' Notes remarks merge pending.';
       }
       if (errors.length) {
         message += ` ${errors.length} call parse warning(s).`;
@@ -321,6 +326,39 @@ async function doSyncFromPublishedSheet(
       sourceUrl: PUBLISHED_SHEET_HTML_URL,
     };
   }
+}
+
+/**
+ * Second-pass CRM Notes → per-person remarks.
+ * Used on Vercel after the call import so sync heartbeats stay alive and peak
+ * RAM does not hold both CSVs at once. Same Notes source as localhost.
+ */
+export async function mergePublishedCrmRemarks(): Promise<{
+  remarkCount: number;
+  rowCount: number;
+}> {
+  let crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
+  await yieldEventLoop();
+  const remarks = await loadCrmRemarksByCustomer(crmText);
+  crmText = '';
+  await yieldEventLoop();
+
+  const rows = await loadRawRows();
+  const derived = applyRemarksToRows(rows, remarks);
+  await saveRawRows(derived, 'google_sheets');
+
+  const meta = await loadSyncMeta();
+  const messageBase = (meta.message || '').replace(
+    /\s*Notes remarks merge pending\.?/i,
+    '',
+  );
+  await saveSyncMeta({
+    ...meta,
+    message: `${messageBase} Merged Notes remarks for ${remarks.size.toLocaleString()} customers.`,
+    status: 'ok',
+  });
+
+  return { remarkCount: remarks.size, rowCount: derived.length };
 }
 
 /**
