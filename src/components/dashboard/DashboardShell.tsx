@@ -112,8 +112,8 @@ export function DashboardShell() {
         await syncSheets();
       } catch {
         if (cancelled) return;
-        // Keep the error banner; offer one retry after a short pause.
-        await new Promise((r) => setTimeout(r, 1500));
+        // Retry once — covers stage-only frames and brief network blips.
+        await new Promise((r) => setTimeout(r, 2000));
         if (!cancelled) {
           try {
             await syncSheets();
@@ -126,7 +126,9 @@ export function DashboardShell() {
     return () => {
       cancelled = true;
     };
-  }, [syncSheets]);
+    // syncSheets is a stable zustand action; mount once on boot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const tabLabel = TAB_ITEMS.find((t) => t.id === activeTab)?.label ?? 'Dashboard';
   const lastSyncAt = snapshot?.syncMeta?.lastSyncAt;

@@ -396,23 +396,6 @@ export async function POST(req: NextRequest) {
                   releaseCallsFromMemory();
                 }
 
-                const exactSlim = offsets?.size
-                  ? await awaitWithHeartbeats(
-                      send,
-                      'classifying',
-                      slimSnapshotFromDiskCalls({
-                        ...stageSnap,
-                        classifications: [],
-                      }),
-                    )
-                  : slimSnapshotForApi({
-                      ...stageSnap,
-                      classifications: [],
-                      calls: await loadCalls(),
-                    });
-                exactSlim.callTotal =
-                  slimMeta.callCount ?? diskCount ?? exactSlim.callTotal;
-
                 const overrides = await loadOverrides();
                 const withOverrides = applyOverridesToClassifications(
                   engineClassifications,
@@ -427,13 +410,18 @@ export async function POST(req: NextRequest) {
                     return { ...o, originalCategory: orig?.primaryCategory };
                   }),
                 );
-                exactSlim.classifications =
-                  withOverrides.map(slimClassification);
-                replaceCachedSnapshot(exactSlim);
+                const classifications = withOverrides.map(slimClassification);
 
-                // KPI pack first (no lead rows) so intelligence survives even if
-                // the larger leads frame is cut by the platform.
-                const kpiWire = toOverviewWire(exactSlim, { omitLeads: true });
+                // Ship intelligence KPIs IMMEDIATELY (before disk slim / remarks /
+                // leads) so the browser never sticks on stage-only zeros.
+                const intelSlim = {
+                  ...stageSnap,
+                  classifications,
+                  callTotal:
+                    slimMeta.callCount ?? diskCount ?? stageSnap.callTotal,
+                };
+                replaceCachedSnapshot(intelSlim);
+                const kpiWire = toOverviewWire(intelSlim, { omitLeads: true });
                 snapshot = kpiWire;
                 send({
                   ok: true,
@@ -447,9 +435,38 @@ export async function POST(req: NextRequest) {
                   light: true,
                   bootstrap: false,
                   stageOnly: false,
+                  classified: true,
                 });
 
-                // Remarks after calls are released — same Notes as localhost.
+                // Exact today/exec aggregates from full disk history (best-effort).
+                let exactSlim = intelSlim;
+                try {
+                  exactSlim = offsets?.size
+                    ? await awaitWithHeartbeats(
+                        send,
+                        'classifying',
+                        slimSnapshotFromDiskCalls({
+                          ...stageSnap,
+                          classifications,
+                        }),
+                      )
+                    : slimSnapshotForApi({
+                        ...stageSnap,
+                        classifications,
+                        calls: await loadCalls(),
+                      });
+                  exactSlim.classifications = classifications;
+                  exactSlim.callTotal =
+                    slimMeta.callCount ?? diskCount ?? exactSlim.callTotal;
+                  replaceCachedSnapshot(exactSlim);
+                } catch (aggErr) {
+                  console.warn(
+                    '[api/crm/sync] call-aggregate upgrade skipped',
+                    aggErr,
+                  );
+                }
+
+                // Remarks after intelligence KPIs are already on the wire.
                 try {
                   send({ ok: true, phase: 'merging-remarks', t: Date.now() });
                   const remarks = await awaitWithHeartbeats(
@@ -490,6 +507,7 @@ export async function POST(req: NextRequest) {
                   light: false,
                   bootstrap: false,
                   stageOnly: false,
+                  classified: true,
                 });
               } catch (classifyErr) {
                 console.warn(
