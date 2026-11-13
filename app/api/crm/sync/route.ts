@@ -182,111 +182,109 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        let snapshot: string | null = null;
+        let snapshot: string | Record<string, unknown> | null = null;
         let snapshotEncoding: 'gzip-base64' | null = null;
         let snapshotError: string | null = null;
         let pack: 'overview' | 'full' | null = null;
 
         if (body.includeSnapshot !== false) {
-          // Bootstrap FIRST and yield so Vercel can flush bytes to the browser
-          // before classify/loadSnapshot burns CPU/memory and resets the socket.
-          try {
-            const callTotal =
-              result.callCount ??
-              (syncMeta as { callCount?: number }).callCount ??
-              0;
-            const rowTotal =
-              result.rowCount ??
-              (syncMeta as { rowCount?: number }).rowCount ??
-              0;
-            const slimMeta = {
-              lastSyncAt: (syncMeta as { lastSyncAt?: string }).lastSyncAt,
-              lastImportAt: (syncMeta as { lastImportAt?: string }).lastImportAt,
-              source: (syncMeta as { source?: string }).source,
-              status: (syncMeta as { status?: string }).status,
+          const onVercel = Boolean(process.env.VERCEL);
+          // Bootstrap FIRST (plain JSON snapshot — no gzip) and flush before any
+          // classify work. Vercel OOMs during loadSnapshot and resets the socket.
+          const callTotal =
+            result.callCount ??
+            (syncMeta as { callCount?: number }).callCount ??
+            0;
+          const rowTotal =
+            result.rowCount ??
+            (syncMeta as { rowCount?: number }).rowCount ??
+            0;
+          const slimMeta = {
+            lastSyncAt: (syncMeta as { lastSyncAt?: string }).lastSyncAt ?? undefined,
+            lastImportAt:
+              (syncMeta as { lastImportAt?: string }).lastImportAt ?? undefined,
+            source: (syncMeta as { source?: string }).source ?? 'google_sheets',
+            status: (syncMeta as { status?: string }).status ?? 'ok',
+            rowCount: rowTotal,
+            callCount: callTotal,
+            latestDataAt:
+              (syncMeta as { latestDataAt?: string | null }).latestDataAt ??
+              undefined,
+          };
+          const bootWire = {
+            v: 1 as const,
+            pack: 'overview' as const,
+            builtAt: new Date().toISOString(),
+            syncMeta: slimMeta,
+            callTotal,
+            interactionTotal: rowTotal,
+            leads: [] as [],
+            followUps: [] as [],
+            calls: [] as [],
+            projects: [] as string[],
+            executives: [] as string[],
+            reviews: [] as [],
+            overrides: [] as [],
+            dataHealth: {
+              totalRows: rowTotal,
+              validCustomers: rowTotal,
+              unmatchedRows: 0,
+              duplicateCustomerIds: [] as string[],
+              duplicatePhones: [] as string[],
+              missingCustomerIds: 0,
+              missingPhones: 0,
+              issues: [] as string[],
+            },
+            overviewMetrics: {
+              totalCustomers: rowTotal,
+              totalProcesses: rowTotal,
+              totalInteractions: rowTotal,
+              totalCalls: callTotal,
+              byStage: {},
+              byCategory: {
+                GONE_DARK: 0,
+                NOT_PICKING_UP: 0,
+                MISMARKED_NI: 0,
+                STUCK: 0,
+                VERY_HIGH_INTENT: 0,
+                HIGH_INTENT: 0,
+                NONE: 0,
+              },
+              salesClosed: 0,
+              notInterested: 0,
+              conversionRate: 0,
+              conversionDenominator: 0,
+              conversionNumerator: 0,
+              conversionDenominatorDescription:
+                'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
+            },
+          };
+          // Plain object — client resolveApiSnapshot accepts non-gzip snapshots.
+          snapshot = bootWire;
+          snapshotEncoding = null;
+          pack = 'overview';
+          send({
+            ok: true,
+            phase: 'done',
+            result: {
+              status: result.status,
+              message: result.message,
               rowCount: rowTotal,
               callCount: callTotal,
-              latestDataAt: (syncMeta as { latestDataAt?: string | null })
-                .latestDataAt,
-            };
-            const bootWire = {
-              v: 1 as const,
-              pack: 'overview' as const,
-              builtAt: new Date().toISOString(),
-              syncMeta: slimMeta,
-              callTotal,
-              interactionTotal: rowTotal,
-              leads: [] as [],
-              followUps: [] as [],
-              calls: [] as [],
-              projects: [] as string[],
-              executives: [] as string[],
-              reviews: [] as [],
-              overrides: [] as [],
-              dataHealth: {
-                totalRows: rowTotal,
-                validCustomers: rowTotal,
-                unmatchedRows: 0,
-                duplicateCustomerIds: [] as string[],
-                duplicatePhones: [] as string[],
-                missingCustomerIds: 0,
-                missingPhones: 0,
-                issues: [] as string[],
-              },
-              overviewMetrics: {
-                totalCustomers: rowTotal,
-                totalProcesses: rowTotal,
-                totalInteractions: rowTotal,
-                totalCalls: callTotal,
-                byStage: {},
-                byCategory: {
-                  GONE_DARK: 0,
-                  NOT_PICKING_UP: 0,
-                  MISMARKED_NI: 0,
-                  STUCK: 0,
-                  VERY_HIGH_INTENT: 0,
-                  HIGH_INTENT: 0,
-                  NONE: 0,
-                },
-                salesClosed: 0,
-                notInterested: 0,
-                conversionRate: 0,
-                conversionDenominator: 0,
-                conversionNumerator: 0,
-                conversionDenominatorDescription:
-                  'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
-              },
-            };
-            snapshot = gzipWire(bootWire);
-            snapshotEncoding = 'gzip-base64';
-            pack = 'overview';
-            send({
-              ok: true,
-              phase: 'done',
-              result: {
-                status: result.status,
-                message: result.message,
-                rowCount: rowTotal,
-                callCount: callTotal,
-              },
-              syncMeta: slimMeta,
-              pack,
-              snapshotEncoding,
-              snapshot,
-              snapshotError: null,
-              light: true,
-              bootstrap: true,
-            });
-            // Critical: let the runtime flush NDJSON to the client before heavy work.
-            await new Promise((r) => setTimeout(r, 500));
-          } catch (bootErr) {
-            console.warn('[api/crm/sync] bootstrap pack skipped', bootErr);
-          }
+            },
+            syncMeta: slimMeta,
+            pack,
+            snapshotEncoding: null,
+            snapshot: bootWire,
+            snapshotError: null,
+            light: true,
+            bootstrap: true,
+          });
+          // Let the platform flush NDJSON to the browser before more work.
+          await new Promise((r) => setTimeout(r, 750));
 
-          // On Vercel, stop after bootstrap — full classify/snapshot OOMs and
-          // resets the socket (browser shows Network error). Localhost still
-          // upgrades to the full intelligence pack below.
-          if (process.env.VERCEL === '1' && snapshot) {
+          // Vercel: never run full classify in this request (OOM → Network error).
+          if (onVercel) {
             return;
           }
 

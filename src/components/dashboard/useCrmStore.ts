@@ -116,8 +116,11 @@ async function parseSyncStream(res: Response): Promise<ApiJson> {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-  let lastDone: ApiJson | null = null;
-  let lastError: ApiJson | null = null;
+  // Object holder so TS tracks mutations inside nested ingest callbacks.
+  const acc: { done: ApiJson | null; error: ApiJson | null } = {
+    done: null,
+    error: null,
+  };
 
   const ingestLine = (line: string) => {
     const trimmed = line.trim();
@@ -125,8 +128,8 @@ async function parseSyncStream(res: Response): Promise<ApiJson> {
     try {
       const row = JSON.parse(trimmed) as ApiJson & { phase?: string };
       // Prefer the latest successful done payload (light first, then rich leads).
-      if (row.phase === 'done' || (row.ok && row.snapshot)) lastDone = row;
-      if (row.ok === false || row.phase === 'error') lastError = row;
+      if (row.phase === 'done' || (row.ok && row.snapshot)) acc.done = row;
+      if (row.ok === false || row.phase === 'error') acc.error = row;
     } catch {
       // ignore partial/broken lines
     }
@@ -144,30 +147,30 @@ async function parseSyncStream(res: Response): Promise<ApiJson> {
     ingestLine(buffer);
   } catch (streamErr) {
     // Vercel may reset after the light pack — keep whatever dashboard we already got.
-    if (lastDone?.snapshot) {
+    if (acc.done?.snapshot) {
       console.warn('[sync] stream ended early; using last dashboard pack', streamErr);
-      return lastDone;
+      return acc.done;
     }
     throw streamErr;
   }
 
-  if (lastError && !lastDone) {
+  if (acc.error && !acc.done) {
     throw new Error(
-      (typeof lastError.error === 'string' && lastError.error) ||
+      (typeof acc.error.error === 'string' && acc.error.error) ||
         'Sync failed',
     );
   }
-  if (!lastDone) {
+  if (!acc.done) {
     throw new Error(
       'Sync ended without dashboard data. Click Retry — first sync can take up to a minute.',
     );
   }
-  if (lastDone.ok === false) {
+  if (acc.done.ok === false) {
     throw new Error(
-      (typeof lastDone.error === 'string' && lastDone.error) || 'Sync failed',
+      (typeof acc.done.error === 'string' && acc.done.error) || 'Sync failed',
     );
   }
-  return lastDone;
+  return acc.done;
 }
 
 async function snapshotFromApi(data: ApiJson): Promise<CrmSnapshot | null> {
