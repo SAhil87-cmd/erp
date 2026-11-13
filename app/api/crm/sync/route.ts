@@ -33,19 +33,28 @@ const jsonReplacer = (_key: string, value: unknown) => {
   return value;
 };
 
-function toOverviewWire(snapshot: CrmSnapshot) {
-  const wire = toCompactWire(snapshot);
+function toOverviewWire(
+  snapshot: CrmSnapshot,
+  opts?: { omitLeads?: boolean },
+) {
+  const wire = toCompactWire(snapshot, opts);
   return {
     ...wire,
     pack: 'overview' as const,
-    // Keep compact leads + day indexes so date filters can recompute KPIs client-side.
-    // Only trim bulky call/follow-up previews; metrics still use callTotal / series.
+    // Keep compact leads + day indexes when possible so date filters recompute KPIs.
+    // On Vercel we first ship omitLeads=true so KPIs arrive before the connection drops.
     followUps: [] as typeof wire.followUps,
     calls: wire.calls?.slice(0, 40) ?? [],
     overviewMetrics: computeOverviewMetrics(snapshot),
     recoveryMetrics: computeRecoveryMetrics(snapshot.classifications),
     executivePerformance: computeExecutivePerformance(snapshot),
   };
+}
+
+function gzipWire(wire: unknown): string {
+  return gzipSync(Buffer.from(JSON.stringify(wire, jsonReplacer), 'utf8'), {
+    level: 6,
+  }).toString('base64');
 }
 
 export async function GET() {
@@ -89,12 +98,14 @@ export async function POST(req: NextRequest) {
       if (body.includeSnapshot !== false) {
         const full = packSnapshot(await loadSnapshot());
         const useFull = body.pack === 'full';
-        const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
+        // Non-stream path: prefer light overview on Vercel to avoid OOM/timeouts.
+        const omitLeads =
+          !useFull && process.env.VERCEL === '1';
+        const wire = useFull
+          ? toCompactWire(full)
+          : toOverviewWire(full, { omitLeads });
         pack = useFull ? 'full' : 'overview';
-        snapshot = gzipSync(
-          Buffer.from(JSON.stringify(wire, jsonReplacer), 'utf8'),
-          { level: 6 },
-        ).toString('base64');
+        snapshot = gzipWire(wire);
         snapshotEncoding = 'gzip-base64';
       }
       return NextResponse.json({
@@ -186,35 +197,83 @@ export async function POST(req: NextRequest) {
               loadSnapshot(),
             );
             const full = packSnapshot(loaded);
-            // Yield so a heartbeat can flush before heavy JSON/gzip work.
             await new Promise((r) => setImmediate(r));
             send({ ok: true, phase: 'packing-dashboard', t: Date.now() });
+
             const useFull = body.pack === 'full';
-            const wire = useFull ? toCompactWire(full) : toOverviewWire(full);
             pack = useFull ? 'full' : 'overview';
-            await new Promise((r) => setImmediate(r));
-            snapshot = gzipSync(
-              Buffer.from(JSON.stringify(wire, jsonReplacer), 'utf8'),
-              { level: 6 },
-            ).toString('base64');
             snapshotEncoding = 'gzip-base64';
+
+            // 1) Light pack first (no lead rows) so the browser gets KPIs quickly.
+            const lightWire = useFull
+              ? toCompactWire(full)
+              : toOverviewWire(full, { omitLeads: true });
+            snapshot = gzipWire(lightWire);
+            send({
+              ok: true,
+              phase: 'done',
+              result,
+              syncMeta,
+              pack,
+              snapshotEncoding,
+              snapshot,
+              snapshotError: null,
+              light: true,
+            });
+
+            // 2) Best-effort richer pack with lead rows (may OOM on small Vercel plans).
+            if (!useFull) {
+              await new Promise((r) => setImmediate(r));
+              send({ ok: true, phase: 'packing-leads', t: Date.now() });
+              try {
+                const richWire = toOverviewWire(full, { omitLeads: false });
+                const richSnapshot = gzipWire(richWire);
+                send({
+                  ok: true,
+                  phase: 'done',
+                  result,
+                  syncMeta,
+                  pack,
+                  snapshotEncoding,
+                  snapshot: richSnapshot,
+                  snapshotError: null,
+                  light: false,
+                });
+                snapshot = richSnapshot;
+              } catch (richErr) {
+                console.warn(
+                  '[api/crm/sync] rich overview pack skipped',
+                  richErr,
+                );
+              }
+            }
           } catch (snapErr) {
             snapshotError =
               snapErr instanceof Error ? snapErr.message : 'Snapshot build failed';
             console.error('[api/crm/sync] snapshot build failed', snapErr);
+            send({
+              ok: true,
+              phase: 'done',
+              result,
+              syncMeta,
+              pack,
+              snapshotEncoding,
+              snapshot,
+              snapshotError,
+            });
           }
+        } else {
+          send({
+            ok: true,
+            phase: 'done',
+            result,
+            syncMeta,
+            pack,
+            snapshotEncoding,
+            snapshot,
+            snapshotError,
+          });
         }
-
-        send({
-          ok: true,
-          phase: 'done',
-          result,
-          syncMeta,
-          pack,
-          snapshotEncoding,
-          snapshot,
-          snapshotError,
-        });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Sync failed';
         console.error('[api/crm/sync]', err);

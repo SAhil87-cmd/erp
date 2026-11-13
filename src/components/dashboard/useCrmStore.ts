@@ -119,34 +119,36 @@ async function parseSyncStream(res: Response): Promise<ApiJson> {
   let lastDone: ApiJson | null = null;
   let lastError: ApiJson | null = null;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      try {
-        const row = JSON.parse(trimmed) as ApiJson & { phase?: string };
-        if (row.phase === 'done' || (row.ok && row.snapshot)) lastDone = row;
-        if (row.ok === false || row.phase === 'error') lastError = row;
-      } catch {
-        // ignore partial/broken lines
-      }
-    }
-  }
-
-  const trailing = buffer.trim();
-  if (trailing) {
+  const ingestLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
     try {
-      const row = JSON.parse(trailing) as ApiJson & { phase?: string };
+      const row = JSON.parse(trimmed) as ApiJson & { phase?: string };
+      // Prefer the latest successful done payload (light first, then rich leads).
       if (row.phase === 'done' || (row.ok && row.snapshot)) lastDone = row;
       if (row.ok === false || row.phase === 'error') lastError = row;
     } catch {
-      // ignore
+      // ignore partial/broken lines
     }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) ingestLine(line);
+    }
+    ingestLine(buffer);
+  } catch (streamErr) {
+    // Vercel may reset after the light pack — keep whatever dashboard we already got.
+    if (lastDone?.snapshot) {
+      console.warn('[sync] stream ended early; using last dashboard pack', streamErr);
+      return lastDone;
+    }
+    throw streamErr;
   }
 
   if (lastError && !lastDone) {

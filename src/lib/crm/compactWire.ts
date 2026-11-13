@@ -98,7 +98,10 @@ export function isCompactCrmWire(value: unknown): value is CompactCrmWire {
   );
 }
 
-export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
+export function toCompactWire(
+  snapshot: CrmSnapshot,
+  opts?: { omitLeads?: boolean },
+): CompactCrmWire {
   const customers = new Map(
     snapshot.customers.map((c) => [c.customerId, c] as const),
   );
@@ -106,28 +109,33 @@ export function toCompactWire(snapshot: CrmSnapshot): CompactCrmWire {
     snapshot.classifications.map((c) => [c.salesProcessId, c] as const),
   );
 
-  const leads: CompactLeadRow[] = snapshot.processes.map((p) => {
-    const customer = customers.get(p.customerId);
-    const cls = clsByProcess.get(p.salesProcessId);
-    const cat = cls?.primaryCategory ?? 'NONE';
-    return [
-      p.salesProcessId,
-      p.customerId,
-      customer?.name ?? '',
-      customer?.mobileNum ?? '',
-      p.currentStage,
-      p.assignedTo ?? '',
-      p.projectName ?? '',
-      p.source ?? '',
-      CAT_TO_CODE[cat] ?? '-',
-      cls?.callDataStatus === 'INSUFFICIENT_CALL_DATA' ? 'I' : 'O',
-      (p.stageEnteredAt ?? '').slice(0, 10),
-      (cls?.underlyingFlags ?? []).map((f) => CAT_TO_CODE[f] ?? '').filter(Boolean).join(''),
-      p.lastInteractionDate ?? calendarDateKey(p.stageEnteredAt) ?? '',
-      p.lastCallDate ?? '',
-      p.remark ?? '',
-    ];
-  });
+  const leads: CompactLeadRow[] = opts?.omitLeads
+    ? []
+    : snapshot.processes.map((p) => {
+        const customer = customers.get(p.customerId);
+        const cls = clsByProcess.get(p.salesProcessId);
+        const cat = cls?.primaryCategory ?? 'NONE';
+        return [
+          p.salesProcessId,
+          p.customerId,
+          customer?.name ?? '',
+          customer?.mobileNum ?? '',
+          p.currentStage,
+          p.assignedTo ?? '',
+          p.projectName ?? '',
+          p.source ?? '',
+          CAT_TO_CODE[cat] ?? '-',
+          cls?.callDataStatus === 'INSUFFICIENT_CALL_DATA' ? 'I' : 'O',
+          (p.stageEnteredAt ?? '').slice(0, 10),
+          (cls?.underlyingFlags ?? [])
+            .map((f) => CAT_TO_CODE[f] ?? '')
+            .filter(Boolean)
+            .join(''),
+          p.lastInteractionDate ?? calendarDateKey(p.stageEnteredAt) ?? '',
+          p.lastCallDate ?? '',
+          p.remark ?? '',
+        ];
+      });
 
   // Only ship actionable follow-ups (overdue → +14 days, or any revisit).
   const today = todayCalendarKey();
