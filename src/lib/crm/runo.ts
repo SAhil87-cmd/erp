@@ -249,7 +249,10 @@ export function importCallsFromCsv(csvText: string): {
  * One-pass published call-sheet import that yields the event loop so NDJSON
  * heartbeats can flush during large Papa parses on Vercel.
  */
-export async function importPublishedCallSheetAsync(csvText: string): Promise<{
+export async function importPublishedCallSheetAsync(
+  csvText: string,
+  opts?: { maxAgeDays?: number; maxCalls?: number },
+): Promise<{
   calls: CallRecord[];
   errors: string[];
   derivedRows: RawSheetRow[];
@@ -266,6 +269,13 @@ export async function importPublishedCallSheetAsync(csvText: string): Promise<{
     statusEnteredAt: string;
   };
 
+  const maxAgeDays = opts?.maxAgeDays;
+  const maxCalls = opts?.maxCalls ?? 0;
+  const cutoffMs =
+    maxAgeDays && maxAgeDays > 0
+      ? Date.now() - maxAgeDays * 86_400_000
+      : null;
+
   const calls: CallRecord[] = [];
   const errors: string[] = [];
   const byKey = new Map<string, Agg>();
@@ -281,6 +291,33 @@ export async function importPublishedCallSheetAsync(csvText: string): Promise<{
       step: (result, parser) => {
         const row = result.data;
         if (!row || typeof row !== 'object') return;
+
+        const startProbe = cell(
+          row,
+          'Call Start Date',
+          'callStartDate',
+          'callDate',
+          'CallDate',
+          'callAt',
+          'CallAt',
+        );
+        if (cutoffMs != null && startProbe) {
+          const parsed = parseFlexibleDate(startProbe);
+          if (parsed && parsed.getTime() < cutoffMs) {
+            idx += 1;
+            sinceYield += 1;
+            if (sinceYield >= 2000) {
+              sinceYield = 0;
+              parser.pause();
+              setImmediate(() => parser.resume());
+            }
+            return;
+          }
+        }
+        if (maxCalls > 0 && calls.length >= maxCalls) {
+          parser.abort();
+          return;
+        }
 
         const rawCustomerId = cell(
           row,

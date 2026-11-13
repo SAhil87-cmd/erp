@@ -168,8 +168,12 @@ async function doSyncFromPublishedSheet(
     if (!urlOverride) {
       const callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
       await yieldEventLoop();
-      const { calls, errors, derivedRows } =
-        await importPublishedCallSheetAsync(callsText);
+      // Vercel: only keep ~60 days / 20k calls so parse+classify fits in memory.
+      const onVercel = Boolean(process.env.VERCEL);
+      const { calls, errors, derivedRows } = await importPublishedCallSheetAsync(
+        callsText,
+        onVercel ? { maxAgeDays: 60, maxCalls: 20_000 } : undefined,
+      );
       await yieldEventLoop();
       await saveCalls(calls);
       const callCount = calls.length;
@@ -179,7 +183,7 @@ async function doSyncFromPublishedSheet(
       // skip there so the primary call sync finishes reliably; localhost still merges.
       let derived = derivedRows;
       let remarkCount = 0;
-      const mergeRemarks = process.env.VERCEL !== '1';
+      const mergeRemarks = !onVercel;
       if (mergeRemarks) {
         try {
           const crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
