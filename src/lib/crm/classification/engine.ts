@@ -265,7 +265,7 @@ export async function classifyAllProcessesAsync(
   }
 
   const out: ClassificationResult[] = [];
-  const yieldEvery = process.env.VERCEL ? 100 : 250;
+  const yieldEvery = process.env.VERCEL ? 40 : 250;
   for (let i = 0; i < processes.length; i += 1) {
     const p = processes[i]!;
     const customerCalls = byCustomer.get(p.customerId) ?? [];

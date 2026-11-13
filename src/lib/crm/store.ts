@@ -468,6 +468,22 @@ export function replaceCachedSnapshot(snapshot: CrmSnapshot): void {
   }
 }
 
+/**
+ * Take ownership of the in-memory call array (Vercel).
+ * Clears the store reference so classify/slim can free peak RAM before packing the wire.
+ */
+export function takeCallsFromMemory(): CallRecord[] {
+  if (!IS_VERCEL) return [];
+  const calls = memory().calls;
+  memory().calls = [];
+  return calls;
+}
+
+/** Drop retained calls after aggregates/classify (Vercel peak-memory control). */
+export function releaseCallsFromMemory(): void {
+  if (IS_VERCEL) memory().calls = [];
+}
+
 export async function loadCallsForCustomer(
   customerId: string,
 ): Promise<CallRecord[]> {

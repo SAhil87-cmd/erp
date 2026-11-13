@@ -82,6 +82,7 @@ console.log(
   JSON.stringify(
     {
       stageOnly: lastDone.stageOnly ?? null,
+      message: lastDone.result?.message ?? lastDone.syncMeta?.message ?? null,
       customers: om.totalCustomers,
       calls: w.callTotal ?? om.totalCalls,
       closed: om.salesClosed,
@@ -91,6 +92,10 @@ console.log(
       highIntent: byCat.HIGH_INTENT ?? 0,
       veryHighIntent: byCat.VERY_HIGH_INTENT ?? 0,
       leads: w.leads?.length ?? 0,
+      remarkSample: (w.leads || [])
+        .filter((l) => l.remark)
+        .slice(0, 3)
+        .map((l) => ({ name: l.name, remark: String(l.remark).slice(0, 60) })),
       topExecs: execs.map((e) => ({
         name: e.executiveName,
         score: e.rankingScore,

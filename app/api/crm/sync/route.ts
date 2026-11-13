@@ -16,7 +16,9 @@ import {
   loadOverrides,
   loadSnapshot,
   loadStageOnlySnapshot,
+  releaseCallsFromMemory,
   replaceCachedSnapshot,
+  takeCallsFromMemory,
 } from '@/lib/crm/store';
 import type { CrmSnapshot } from '@/lib/crm/types';
 
@@ -331,21 +333,41 @@ export async function POST(req: NextRequest) {
               // Upgrade: classify against the FULL call set (exact parity with localhost).
               send({ ok: true, phase: 'classifying', t: Date.now() });
               try {
-                let calls = await loadCalls();
+                // Own the call array so the store doesn't retain a second root ref.
+                let calls = takeCallsFromMemory();
+                if (!calls.length) calls = await loadCalls();
+
+                const processInputs = stageSnap.processes.map((p) => ({
+                  customerId: p.customerId,
+                  salesProcessId: p.salesProcessId,
+                  currentStage: p.currentStage,
+                  stageEnteredAt: p.stageEnteredAt,
+                  stageHistory: p.stageHistory,
+                }));
+
+                // Exact call aggregates first (today/exec charts), then classify.
+                const exactSlim = await awaitWithHeartbeats(
+                  send,
+                  'classifying',
+                  Promise.resolve().then(() =>
+                    slimSnapshotForApi({
+                      ...stageSnap,
+                      classifications: [],
+                      calls,
+                    }),
+                  ),
+                );
+                exactSlim.callTotal =
+                  slimMeta.callCount ?? calls.length ?? exactSlim.callTotal;
+
                 const engineClassifications = await awaitWithHeartbeats(
                   send,
                   'classifying',
-                  classifyAllProcessesAsync(
-                    stageSnap.processes.map((p) => ({
-                      customerId: p.customerId,
-                      salesProcessId: p.salesProcessId,
-                      currentStage: p.currentStage,
-                      stageEnteredAt: p.stageEnteredAt,
-                      stageHistory: p.stageHistory,
-                    })),
-                    calls,
-                  ),
+                  classifyAllProcessesAsync(processInputs, calls),
                 );
+                calls = [];
+                releaseCallsFromMemory();
+
                 const overrides = await loadOverrides();
                 const withOverrides = applyOverridesToClassifications(
                   engineClassifications,
@@ -360,17 +382,29 @@ export async function POST(req: NextRequest) {
                     return { ...o, originalCategory: orig?.primaryCategory };
                   }),
                 );
-                const classifications = withOverrides.map(slimClassification);
-                // Rebuild call aggregates from every call so KPIs match localhost exactly.
-                const exactSlim = slimSnapshotForApi({
-                  ...stageSnap,
-                  classifications,
-                  calls,
-                });
-                exactSlim.callTotal =
-                  slimMeta.callCount ?? calls.length ?? exactSlim.callTotal;
-                calls = [];
+                exactSlim.classifications =
+                  withOverrides.map(slimClassification);
                 replaceCachedSnapshot(exactSlim);
+
+                // KPI pack first (no lead rows) so intelligence survives even if
+                // the larger leads frame is cut by the platform.
+                const kpiWire = toOverviewWire(exactSlim, { omitLeads: true });
+                snapshot = kpiWire;
+                send({
+                  ok: true,
+                  phase: 'done',
+                  result: resultLite,
+                  syncMeta: slimMeta,
+                  pack: 'overview',
+                  snapshotEncoding: null,
+                  snapshot: kpiWire,
+                  snapshotError: null,
+                  light: true,
+                  bootstrap: false,
+                  stageOnly: false,
+                });
+
+                send({ ok: true, phase: 'packing-leads', t: Date.now() });
                 const richWire = toOverviewWire(exactSlim, {
                   omitLeads: false,
                 });
