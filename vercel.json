@@ -5,8 +5,7 @@
   "buildCommand": "npm run build",
   "functions": {
     "app/api/crm/sync/route.ts": {
-      "maxDuration": 300,
-      "memory": 3008
+      "maxDuration": 300
     }
   }
 }
