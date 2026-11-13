@@ -8,7 +8,8 @@ import {
 import { toCompactWire } from '@/lib/crm/compactWire';
 import {
   getSyncStatus,
-  mergePublishedCrmRemarks,
+  loadPublishedCrmRemarks,
+  stampRemarksOnProcesses,
   syncFromGoogleSheets,
 } from '@/lib/crm/sheets';
 import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
@@ -308,31 +309,6 @@ export async function POST(req: NextRequest) {
             }
 
             try {
-              // Merge CRM Notes before stage build so process.remark matches localhost.
-              try {
-                send({ ok: true, phase: 'merging-remarks', t: Date.now() });
-                const remarkResult = await awaitWithHeartbeats(
-                  send,
-                  'merging-remarks',
-                  mergePublishedCrmRemarks(),
-                );
-                resultLite = {
-                  ...resultLite,
-                  message: `${resultLite.message} Merged Notes remarks for ${remarkResult.remarkCount.toLocaleString()} customers.`,
-                };
-                const metaAfter = await getSyncStatus();
-                slimMeta = {
-                  ...slimMeta,
-                  lastSyncAt: metaAfter.lastSyncAt ?? slimMeta.lastSyncAt,
-                  lastImportAt: metaAfter.lastImportAt ?? slimMeta.lastImportAt,
-                  status: metaAfter.status ?? slimMeta.status,
-                  callCount: callTotal,
-                  rowCount: rowTotal,
-                };
-              } catch (remarkErr) {
-                console.warn('[api/crm/sync] remarks merge skipped', remarkErr);
-              }
-
               const stageSnap = packSnapshot(
                 await awaitWithHeartbeats(
                   send,
@@ -432,6 +408,30 @@ export async function POST(req: NextRequest) {
                   bootstrap: false,
                   stageOnly: false,
                 });
+
+                // Remarks after calls are released — same Notes as localhost.
+                try {
+                  send({ ok: true, phase: 'merging-remarks', t: Date.now() });
+                  const remarks = await awaitWithHeartbeats(
+                    send,
+                    'merging-remarks',
+                    loadPublishedCrmRemarks(),
+                  );
+                  const stamped = stampRemarksOnProcesses(
+                    exactSlim.processes,
+                    remarks,
+                  );
+                  replaceCachedSnapshot(exactSlim);
+                  resultLite = {
+                    ...resultLite,
+                    message: `${resultLite.message} Merged Notes remarks for ${remarks.size.toLocaleString()} customers (${stamped.toLocaleString()} processes).`,
+                  };
+                } catch (remarkErr) {
+                  console.warn(
+                    '[api/crm/sync] remarks merge skipped',
+                    remarkErr,
+                  );
+                }
 
                 send({ ok: true, phase: 'packing-leads', t: Date.now() });
                 const richWire = toOverviewWire(exactSlim, {

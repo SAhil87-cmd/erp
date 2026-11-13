@@ -329,23 +329,51 @@ async function doSyncFromPublishedSheet(
 }
 
 /**
- * Second-pass CRM Notes → per-person remarks.
- * Used on Vercel after the call import so sync heartbeats stay alive and peak
- * RAM does not hold both CSVs at once. Same Notes source as localhost.
+ * Load CRM-tab Notes → remark map. Caller should run this only after heavy call
+ * arrays are released so Vercel peak RAM stays under the platform limit.
  */
-export async function mergePublishedCrmRemarks(): Promise<{
-  remarkCount: number;
-  rowCount: number;
-}> {
+export async function loadPublishedCrmRemarks(): Promise<Map<string, string>> {
   let crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
   await yieldEventLoop();
   const remarks = await loadCrmRemarksByCustomer(crmText);
   crmText = '';
   await yieldEventLoop();
+  return remarks;
+}
 
+/** Stamp Notes onto process.remark (mutates in place). */
+export function stampRemarksOnProcesses(
+  processes: Array<{ customerId: string; remark?: string }>,
+  remarks: Map<string, string>,
+): number {
+  let stamped = 0;
+  for (const p of processes) {
+    const note = remarks.get(p.customerId);
+    if (!note) continue;
+    p.remark = note;
+    stamped += 1;
+  }
+  return stamped;
+}
+
+/**
+ * Second-pass CRM Notes → per-person remarks on raw rows + sync meta.
+ * Prefer loadPublishedCrmRemarks + stampRemarksOnProcesses on Vercel after classify.
+ */
+export async function mergePublishedCrmRemarks(): Promise<{
+  remarkCount: number;
+  rowCount: number;
+}> {
+  const remarks = await loadPublishedCrmRemarks();
   const rows = await loadRawRows();
-  const derived = applyRemarksToRows(rows, remarks);
-  await saveRawRows(derived, 'google_sheets');
+  // Mutate in place when possible to avoid a second 10k-row allocation.
+  for (const row of rows) {
+    const id = row.customerId?.trim();
+    if (!id) continue;
+    const note = remarks.get(id);
+    if (note) row.notes = note;
+  }
+  await saveRawRows(rows, 'google_sheets');
 
   const meta = await loadSyncMeta();
   const messageBase = (meta.message || '').replace(
@@ -358,7 +386,7 @@ export async function mergePublishedCrmRemarks(): Promise<{
     status: 'ok',
   });
 
-  return { remarkCount: remarks.size, rowCount: derived.length };
+  return { remarkCount: remarks.size, rowCount: rows.length };
 }
 
 /**
