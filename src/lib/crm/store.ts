@@ -6,6 +6,11 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import {
+  forEachCallFromDisk,
+  loadCallOffsetIndex,
+  type CallOffsetIndex,
+} from './callDisk';
 import { classifyAllProcessesAsync } from './classification/engine';
 import { calendarDateKey } from './dates';
 import { buildProcessIdsByInteractionDay } from './dateIndex';
@@ -42,6 +47,9 @@ const PATHS = {
 type MemoryStore = {
   rawRows: RawSheetRow[];
   calls: CallRecord[];
+  /** Vercel: byte-offset index into /tmp JSONL (exact full history, low RAM). */
+  callOffsets: CallOffsetIndex | null;
+  callCountOnDisk: number;
   reviews: ManualReview[];
   overrides: ClassificationOverride[];
   syncMeta: SyncMeta;
@@ -57,6 +65,8 @@ function memory(): MemoryStore {
     globalStore.__yashodhanCrmStore = {
       rawRows: [],
       calls: [],
+      callOffsets: null,
+      callCountOnDisk: 0,
       reviews: [],
       overrides: [],
       syncMeta: {
@@ -110,8 +120,33 @@ export async function loadRawRows(): Promise<RawSheetRow[]> {
 }
 
 export async function loadCalls(): Promise<CallRecord[]> {
+  // On Vercel with disk-backed calls, do NOT auto-load the full history into RAM.
   if (IS_VERCEL) return memory().calls;
   return readJsonFile<CallRecord[]>(PATHS.calls, []);
+}
+
+export function getCallOffsetIndex(): CallOffsetIndex | null {
+  return memory().callOffsets;
+}
+
+export function getDiskCallCount(): number {
+  return memory().callCountOnDisk || memory().calls.length;
+}
+
+/** Register disk-backed calls after streaming import (Vercel exact parity path). */
+export async function saveCallsToDiskIndex(
+  offsets: CallOffsetIndex,
+  callCount: number,
+): Promise<void> {
+  invalidateSnapshotCache();
+  const m = memory();
+  m.calls = [];
+  m.callOffsets = offsets;
+  m.callCountOnDisk = callCount;
+  m.syncMeta = {
+    ...m.syncMeta,
+    callCount,
+  };
 }
 
 export async function loadReviews(): Promise<ManualReview[]> {
@@ -160,6 +195,8 @@ export async function saveCalls(calls: CallRecord[]): Promise<void> {
   if (IS_VERCEL) {
     const m = memory();
     m.calls = calls;
+    m.callOffsets = null;
+    m.callCountOnDisk = 0;
     m.syncMeta = {
       ...m.syncMeta,
       callCount: calls.length,
@@ -403,8 +440,8 @@ async function buildSnapshotFromStore(
 
   if (IS_VERCEL) {
     if (opts.stageOnly) {
-      // First-paint pack: sample calls only for chart preview speed. Exact
-      // callTotal + full aggregates are restored after classify upgrade.
+      // First-paint: never load the full disk-backed call history into RAM.
+      // Exact callTotal comes from sync meta; aggregates upgrade after classify.
       const callSample =
         calls.length > 8_000
           ? [...calls]
@@ -414,7 +451,11 @@ async function buildSnapshotFromStore(
               .slice(0, 8_000)
           : calls;
       const slim = slimSnapshotForApi({ ...snapshot, calls: callSample });
-      slim.callTotal = syncMeta.callCount ?? loadedCalls.length ?? calls.length;
+      slim.callTotal =
+        syncMeta.callCount ??
+        memory().callCountOnDisk ??
+        loadedCalls.length ??
+        calls.length;
       memory().snapshot = slim;
       return slim;
     }
@@ -482,6 +523,106 @@ export function takeCallsFromMemory(): CallRecord[] {
 /** Drop retained calls after aggregates/classify (Vercel peak-memory control). */
 export function releaseCallsFromMemory(): void {
   if (IS_VERCEL) memory().calls = [];
+}
+
+export async function ensureCallOffsetsLoaded(): Promise<CallOffsetIndex> {
+  const m = memory();
+  if (m.callOffsets && m.callOffsets.size > 0) return m.callOffsets;
+  const loaded = await loadCallOffsetIndex();
+  m.callOffsets = loaded;
+  return loaded;
+}
+
+/** Stream disk calls into slim aggregates without loading the full array. */
+export async function slimSnapshotFromDiskCalls(
+  snapshot: CrmSnapshot,
+): Promise<CrmSnapshot> {
+  const calls: CallRecord[] = [];
+  // For exact exec/today aggregates we still need one full pass in memory briefly.
+  // Prefer streaming aggregation when the set is huge — collect into a temp array
+  // only if disk count is modest; otherwise aggregate on the fly via a shim.
+  const diskCount = memory().callCountOnDisk;
+  if (diskCount > 0 && diskCount <= 30_000) {
+    await forEachCallFromDisk((c) => {
+      calls.push(c);
+    });
+    const slim = slimSnapshotForApi({ ...snapshot, calls });
+    slim.callTotal = diskCount;
+    return slim;
+  }
+
+  // Large sets: aggregate on the fly, keep only a small call preview.
+  const { calendarDateKey: dayKey, todayCalendarKey } = await import('./dates');
+  const calendarToday = todayCalendarKey();
+  const allByExec = new Map<string, number>();
+  const byDayExec = new Map<string, Map<string, number>>();
+  const lastCallByProcess = new Map<string, string>();
+  const lastCallByCustomer = new Map<string, string>();
+  let latestCallDay: string | null = null;
+  const preview: CallRecord[] = [];
+  const PREVIEW = 90;
+
+  await forEachCallFromDisk((call) => {
+    const exec = call.callExecutive?.trim() || 'Unassigned';
+    allByExec.set(exec, (allByExec.get(exec) ?? 0) + 1);
+    const day = dayKey(call.callAt || call.callDate || null);
+    if (day) {
+      if (!latestCallDay || day > latestCallDay) latestCallDay = day;
+      let dayMap = byDayExec.get(day);
+      if (!dayMap) {
+        dayMap = new Map();
+        byDayExec.set(day, dayMap);
+      }
+      dayMap.set(exec, (dayMap.get(exec) ?? 0) + 1);
+      if (call.salesProcessId) {
+        const prev = lastCallByProcess.get(call.salesProcessId);
+        if (!prev || day > prev) lastCallByProcess.set(call.salesProcessId, day);
+      }
+      if (call.customerId) {
+        const prev = lastCallByCustomer.get(call.customerId);
+        if (!prev || day > prev) lastCallByCustomer.set(call.customerId, day);
+      }
+    }
+    preview.push(call);
+    if (preview.length > PREVIEW) preview.shift();
+  });
+
+  const base = slimSnapshotForApi({ ...snapshot, calls: preview });
+  base.callTotal = diskCount || preview.length;
+  // Overlay exact aggregates collected from the full disk pass.
+  const activityDate =
+    (byDayExec.get(calendarToday)?.size ?? 0) > 0
+      ? calendarToday
+      : (latestCallDay ?? calendarToday);
+  const activityByExec = byDayExec.get(activityDate) ?? new Map();
+  let todayCallCount = 0;
+  for (const n of activityByExec.values()) todayCallCount += n;
+  base.activityDate = activityDate;
+  base.activityDateIsFallback = activityDate !== calendarToday;
+  base.todayCallCount = todayCallCount;
+  base.todayCallsByExecutive = [...activityByExec.entries()]
+    .map(([executiveName, callCount]) => ({ executiveName, callCount }))
+    .sort(
+      (a, b) =>
+        b.callCount - a.callCount ||
+        a.executiveName.localeCompare(b.executiveName),
+    );
+  base.callsByExecutive = [...allByExec.entries()]
+    .map(([executiveName, callCount]) => ({ executiveName, callCount }))
+    .sort(
+      (a, b) =>
+        b.callCount - a.callCount ||
+        a.executiveName.localeCompare(b.executiveName),
+    );
+  for (const p of base.processes) {
+    p.lastCallDate =
+      lastCallByProcess.get(p.salesProcessId) ??
+      lastCallByCustomer.get(p.customerId) ??
+      p.lastCallDate ??
+      null;
+  }
+  memory().snapshot = base;
+  return base;
 }
 
 export async function loadCallsForCustomer(

@@ -293,3 +293,59 @@ export async function classifyAllProcessesAsync(
   byCustomer.clear();
   return out;
 }
+
+/**
+ * Exact classify against disk-backed calls (Vercel). Loads one customer's calls
+ * at a time so peak RAM stays flat regardless of total call history size.
+ */
+export async function classifyAllProcessesFromDisk(
+  processes: Array<{
+    customerId: string;
+    salesProcessId: string;
+    currentStage: CanonicalStage;
+    stageEnteredAt: string | null;
+    stageHistory?: StageHistoryEntry[] | null;
+  }>,
+  offsets: import('../callDisk').CallOffsetIndex,
+  config?: ClassificationConfig,
+): Promise<ClassificationResult[]> {
+  const { loadCallsForCustomerFromDisk } = await import('../callDisk');
+  const { promises: fsp } = await import('fs');
+  const { CALLS_JSONL_PATH } = await import('../callDisk');
+  const fd = await fsp.open(CALLS_JSONL_PATH, 'r');
+  const out: ClassificationResult[] = [];
+  const yieldEvery = 25;
+  try {
+    for (let i = 0; i < processes.length; i += 1) {
+      const p = processes[i]!;
+      const customerCalls = await loadCallsForCustomerFromDisk(
+        p.customerId,
+        offsets,
+        fd,
+      );
+      const scoped = customerCalls.filter(
+        (c) =>
+          c.salesProcessId === p.salesProcessId ||
+          (!c.salesProcessId && !c.salesProcessName),
+      );
+      const effective = scoped.length > 0 ? scoped : customerCalls;
+      out.push(
+        classifyLead({
+          customerId: p.customerId,
+          salesProcessId: p.salesProcessId,
+          currentStage: p.currentStage,
+          stageEnteredAt: p.stageEnteredAt,
+          stageHistory: p.stageHistory,
+          calls: effective,
+          config,
+        }),
+      );
+      if (i > 0 && i % yieldEvery === 0) {
+        await new Promise<void>((r) => setImmediate(r));
+      }
+    }
+  } finally {
+    await fd.close();
+  }
+  return out;
+}

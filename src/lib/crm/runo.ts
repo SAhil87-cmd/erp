@@ -5,6 +5,7 @@
 
 import { Readable } from 'node:stream';
 import Papa from 'papaparse';
+import { openCallJsonlWriter, type CallOffsetIndex } from './callDisk';
 import { parseFlexibleDate, toKolkataIso } from './dates';
 import { normalizePhone } from './normalize';
 import type { CallOutcome, CallRecord, RawSheetRow } from './types';
@@ -256,12 +257,16 @@ export async function importPublishedCallSheetAsync(
   opts?: {
     maxAgeDays?: number;
     maxCalls?: number;
+    /** Write calls to /tmp JSONL instead of retaining the full array (Vercel). */
+    useDisk?: boolean;
     onProgress?: (info: { calls: number; rows: number }) => void;
   },
 ): Promise<{
   calls: CallRecord[];
   errors: string[];
   derivedRows: RawSheetRow[];
+  callCount?: number;
+  offsets?: CallOffsetIndex;
 }> {
   type Agg = {
     customerId: string;
@@ -282,6 +287,7 @@ export async function importPublishedCallSheetAsync(
       ? Date.now() - maxAgeDays * 86_400_000
       : null;
 
+  const useDisk = Boolean(opts?.useDisk);
   const calls: CallRecord[] = [];
   const errors: string[] = [];
   const maxErrors = 25;
@@ -289,7 +295,9 @@ export async function importPublishedCallSheetAsync(
   const statusFirst = new Map<string, string>();
   let idx = 0;
   let sinceYield = 0;
+  let diskCount = 0;
   const onProgress = opts?.onProgress;
+  const disk = useDisk ? await openCallJsonlWriter() : null;
 
   await new Promise<void>((resolve, reject) => {
     Papa.parse<Record<string, string>>(source as string, {
@@ -408,7 +416,7 @@ export async function importPublishedCallSheetAsync(
           ) || 0,
         );
 
-        calls.push({
+        const callRec: CallRecord = {
           callRecordId:
             cell(row, 'Call Id', 'callRecordId', 'CallRecordId') ||
             `CALL-IMPORT-${idx}`,
@@ -427,7 +435,13 @@ export async function importPublishedCallSheetAsync(
           salesProcessName:
             cell(row, 'Process Name', 'salesProcessName', 'SalesProcessName') ||
             undefined,
-        });
+        };
+        if (disk) {
+          disk.writeCall(callRec);
+          diskCount += 1;
+        } else {
+          calls.push(callRec);
+        }
 
         if (resolved && startRaw) {
           const name = cell(row, 'Name', 'name');
@@ -488,7 +502,10 @@ export async function importPublishedCallSheetAsync(
         if (sinceYield >= 400) {
           sinceYield = 0;
           parser.pause();
-          onProgress?.({ calls: calls.length, rows: byKey.size });
+          onProgress?.({
+            calls: disk ? diskCount : calls.length,
+            rows: byKey.size,
+          });
           setTimeout(() => parser.resume(), 0);
         }
       },
@@ -498,7 +515,14 @@ export async function importPublishedCallSheetAsync(
   });
 
   await yieldEventLoop();
-  onProgress?.({ calls: calls.length, rows: byKey.size });
+  let offsets: CallOffsetIndex | undefined;
+  let callCount = calls.length;
+  if (disk) {
+    const closed = await disk.close();
+    callCount = closed.callCount;
+    offsets = closed.offsets;
+  }
+  onProgress?.({ calls: callCount, rows: byKey.size });
 
   const derivedRows: RawSheetRow[] = [...byKey.values()].map((agg, i) => {
     const sameStatusFirst = statusFirst.get(agg.customerId);
@@ -528,7 +552,7 @@ export async function importPublishedCallSheetAsync(
     };
   });
 
-  return { calls, errors, derivedRows };
+  return { calls, errors, derivedRows, callCount, offsets };
 }
 
 function normalizeExportStatus(statusRaw: string): string {

@@ -13,16 +13,22 @@ import {
   syncFromGoogleSheets,
 } from '@/lib/crm/sheets';
 import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
-import { classifyAllProcessesAsync } from '@/lib/crm/classification/engine';
+import {
+  classifyAllProcessesAsync,
+  classifyAllProcessesFromDisk,
+} from '@/lib/crm/classification/engine';
 import { slimClassification } from '@/lib/crm/slimSnapshot';
 import {
   applyOverridesToClassifications,
+  ensureCallOffsetsLoaded,
+  getDiskCallCount,
   loadCalls,
   loadOverrides,
   loadSnapshot,
   loadStageOnlySnapshot,
   releaseCallsFromMemory,
   replaceCachedSnapshot,
+  slimSnapshotFromDiskCalls,
   takeCallsFromMemory,
 } from '@/lib/crm/store';
 import type { CrmSnapshot } from '@/lib/crm/types';
@@ -358,10 +364,6 @@ export async function POST(req: NextRequest) {
               // Upgrade: classify against the FULL call set (exact parity with localhost).
               send({ ok: true, phase: 'classifying', t: Date.now() });
               try {
-                // Own the call array so the store doesn't retain a second root ref.
-                let calls = takeCallsFromMemory();
-                if (!calls.length) calls = await loadCalls();
-
                 const processInputs = stageSnap.processes.map((p) => ({
                   customerId: p.customerId,
                   salesProcessId: p.salesProcessId,
@@ -370,23 +372,46 @@ export async function POST(req: NextRequest) {
                   stageHistory: p.stageHistory,
                 }));
 
-                // Exact today/exec aggregates from every call, then classify for
-                // GD/Intent. callTotal is already exact from the sheet sync.
-                const exactSlim = slimSnapshotForApi({
-                  ...stageSnap,
-                  classifications: [],
-                  calls,
-                });
-                exactSlim.callTotal =
-                  slimMeta.callCount ?? calls.length ?? exactSlim.callTotal;
+                const diskCount = getDiskCallCount();
+                const offsets =
+                  diskCount > 0 ? await ensureCallOffsetsLoaded() : null;
 
-                const engineClassifications = await awaitWithHeartbeats(
-                  send,
-                  'classifying',
-                  classifyAllProcessesAsync(processInputs, calls),
-                );
-                calls = [];
-                releaseCallsFromMemory();
+                let engineClassifications;
+                if (offsets && offsets.size > 0) {
+                  // Exact: one customer at a time from /tmp JSONL.
+                  engineClassifications = await awaitWithHeartbeats(
+                    send,
+                    'classifying',
+                    classifyAllProcessesFromDisk(processInputs, offsets),
+                  );
+                } else {
+                  let calls = takeCallsFromMemory();
+                  if (!calls.length) calls = await loadCalls();
+                  engineClassifications = await awaitWithHeartbeats(
+                    send,
+                    'classifying',
+                    classifyAllProcessesAsync(processInputs, calls),
+                  );
+                  calls = [];
+                  releaseCallsFromMemory();
+                }
+
+                const exactSlim = offsets?.size
+                  ? await awaitWithHeartbeats(
+                      send,
+                      'classifying',
+                      slimSnapshotFromDiskCalls({
+                        ...stageSnap,
+                        classifications: [],
+                      }),
+                    )
+                  : slimSnapshotForApi({
+                      ...stageSnap,
+                      classifications: [],
+                      calls: await loadCalls(),
+                    });
+                exactSlim.callTotal =
+                  slimMeta.callCount ?? diskCount ?? exactSlim.callTotal;
 
                 const overrides = await loadOverrides();
                 const withOverrides = applyOverridesToClassifications(

@@ -33,6 +33,7 @@ import {
   loadSnapshot,
   loadSyncMeta,
   saveCalls,
+  saveCallsToDiskIndex,
   saveRawRows,
   saveSyncMeta,
 } from './store';
@@ -185,13 +186,15 @@ async function doSyncFromPublishedSheet(
       const callsRes = await fetchPublishedResponse(getPublishedCallsCsvUrl());
       await yieldEventLoop();
       onProgress?.({ phase: 'parsing-calls' });
-      const callSource = process.env.VERCEL
+      const onVercel = Boolean(process.env.VERCEL);
+      const callSource = onVercel
         ? Readable.fromWeb(
             callsRes.body as import('stream/web').ReadableStream<Uint8Array>,
           )
         : await callsRes.text();
-      const { calls, errors, derivedRows } =
+      const { calls, errors, derivedRows, callCount: importedCount, offsets } =
         await importPublishedCallSheetAsync(callSource, {
+          useDisk: onVercel,
           onProgress: (info) =>
             onProgress?.({
               phase: 'parsing-calls',
@@ -200,8 +203,12 @@ async function doSyncFromPublishedSheet(
             }),
         });
       await yieldEventLoop();
-      await saveCalls(calls);
-      const callCount = calls.length;
+      const callCount = importedCount ?? calls.length;
+      if (onVercel && offsets) {
+        await saveCallsToDiskIndex(offsets, callCount);
+      } else {
+        await saveCalls(calls);
+      }
 
       // Localhost: merge Notes in-process. Vercel: deferred (see sync route) so the
       // connection stays alive and peak RAM stays under the platform limit.
