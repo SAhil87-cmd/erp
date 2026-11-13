@@ -182,16 +182,14 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        send({ ok: true, phase: 'building-dashboard', syncMeta });
-
         let snapshot: string | null = null;
         let snapshotEncoding: 'gzip-base64' | null = null;
         let snapshotError: string | null = null;
         let pack: 'overview' | 'full' | null = null;
 
         if (body.includeSnapshot !== false) {
-          // Immediate bootstrap pack from sync counts so the UI is never blank
-          // if full classify/snapshot OOMs on Vercel.
+          // Bootstrap FIRST and yield so Vercel can flush bytes to the browser
+          // before classify/loadSnapshot burns CPU/memory and resets the socket.
           try {
             const callTotal =
               result.callCount ??
@@ -201,11 +199,21 @@ export async function POST(req: NextRequest) {
               result.rowCount ??
               (syncMeta as { rowCount?: number }).rowCount ??
               0;
+            const slimMeta = {
+              lastSyncAt: (syncMeta as { lastSyncAt?: string }).lastSyncAt,
+              lastImportAt: (syncMeta as { lastImportAt?: string }).lastImportAt,
+              source: (syncMeta as { source?: string }).source,
+              status: (syncMeta as { status?: string }).status,
+              rowCount: rowTotal,
+              callCount: callTotal,
+              latestDataAt: (syncMeta as { latestDataAt?: string | null })
+                .latestDataAt,
+            };
             const bootWire = {
               v: 1 as const,
               pack: 'overview' as const,
               builtAt: new Date().toISOString(),
-              syncMeta,
+              syncMeta: slimMeta,
               callTotal,
               interactionTotal: rowTotal,
               leads: [] as [],
@@ -255,8 +263,13 @@ export async function POST(req: NextRequest) {
             send({
               ok: true,
               phase: 'done',
-              result,
-              syncMeta,
+              result: {
+                status: result.status,
+                message: result.message,
+                rowCount: rowTotal,
+                callCount: callTotal,
+              },
+              syncMeta: slimMeta,
               pack,
               snapshotEncoding,
               snapshot,
@@ -264,9 +277,20 @@ export async function POST(req: NextRequest) {
               light: true,
               bootstrap: true,
             });
+            // Critical: let the runtime flush NDJSON to the client before heavy work.
+            await new Promise((r) => setTimeout(r, 500));
           } catch (bootErr) {
             console.warn('[api/crm/sync] bootstrap pack skipped', bootErr);
           }
+
+          // On Vercel, stop after bootstrap — full classify/snapshot OOMs and
+          // resets the socket (browser shows Network error). Localhost still
+          // upgrades to the full intelligence pack below.
+          if (process.env.VERCEL === '1' && snapshot) {
+            return;
+          }
+
+          send({ ok: true, phase: 'building-dashboard', t: Date.now() });
 
           try {
             const loaded = await awaitWithHeartbeats(
