@@ -8,7 +8,16 @@ import {
 import { toCompactWire } from '@/lib/crm/compactWire';
 import { getSyncStatus, syncFromGoogleSheets } from '@/lib/crm/sheets';
 import { slimSnapshotForApi } from '@/lib/crm/slimSnapshot';
-import { loadSnapshot, loadStageOnlySnapshot } from '@/lib/crm/store';
+import { classifyAllProcessesAsync } from '@/lib/crm/classification/engine';
+import { slimClassification } from '@/lib/crm/slimSnapshot';
+import {
+  applyOverridesToClassifications,
+  attachClassifications,
+  loadCalls,
+  loadOverrides,
+  loadSnapshot,
+  loadStageOnlySnapshot,
+} from '@/lib/crm/store';
 import type { CrmSnapshot } from '@/lib/crm/types';
 
 /** Always slim before wire — localhost fat snapshots lack activityDate / day indexes. */
@@ -210,10 +219,16 @@ export async function POST(req: NextRequest) {
               undefined,
           };
 
-          // Vercel: stage-only snapshot (no classify) — conversion, stages, ranking
-          // without OOM. Ship plain JSON so the client hydrates even if gzip fails.
+          // Vercel: ship stage KPIs first (so the UI never blanks), then upgrade
+          // with call-aware classify (Gone Dark / Mismarked NI / Intent) when memory allows.
           if (onVercel) {
             send({ ok: true, phase: 'building-dashboard', t: Date.now() });
+            const resultLite = {
+              status: result.status,
+              message: result.message,
+              rowCount: rowTotal,
+              callCount: callTotal,
+            };
             try {
               const stageSnap = packSnapshot(
                 await awaitWithHeartbeats(
@@ -229,12 +244,7 @@ export async function POST(req: NextRequest) {
               send({
                 ok: true,
                 phase: 'done',
-                result: {
-                  status: result.status,
-                  message: result.message,
-                  rowCount: rowTotal,
-                  callCount: callTotal,
-                },
+                result: resultLite,
                 syncMeta: slimMeta,
                 pack,
                 snapshotEncoding: null,
@@ -244,75 +254,88 @@ export async function POST(req: NextRequest) {
                 bootstrap: true,
                 stageOnly: true,
               });
+
+              // Upgrade: classify against stored calls and resend full intelligence KPIs.
+              send({ ok: true, phase: 'classifying', t: Date.now() });
+              try {
+                let calls = await loadCalls();
+                if (calls.length > 15_000) {
+                  calls = [...calls]
+                    .sort((a, b) =>
+                      String(b.callAt || '').localeCompare(String(a.callAt || '')),
+                    )
+                    .slice(0, 15_000);
+                }
+                const engineClassifications = await awaitWithHeartbeats(
+                  send,
+                  'classifying',
+                  classifyAllProcessesAsync(
+                    stageSnap.processes.map((p) => ({
+                      customerId: p.customerId,
+                      salesProcessId: p.salesProcessId,
+                      currentStage: p.currentStage,
+                      stageEnteredAt: p.stageEnteredAt,
+                      stageHistory: p.stageHistory,
+                    })),
+                    calls,
+                  ),
+                );
+                calls = [];
+                const overrides = await loadOverrides();
+                const withOverrides = applyOverridesToClassifications(
+                  engineClassifications,
+                  overrides.map((o) => {
+                    if (o.originalCategory) return o;
+                    const orig = engineClassifications.find(
+                      (c) =>
+                        c.customerId === o.customerId &&
+                        (!o.salesProcessId ||
+                          c.salesProcessId === o.salesProcessId),
+                    );
+                    return { ...o, originalCategory: orig?.primaryCategory };
+                  }),
+                );
+                const classifications = withOverrides.map(slimClassification);
+                const upgradedSnap =
+                  attachClassifications(classifications) ?? {
+                    ...stageSnap,
+                    classifications,
+                  };
+                const richWire = toOverviewWire(upgradedSnap, {
+                  omitLeads: false,
+                });
+                snapshot = richWire;
+                send({
+                  ok: true,
+                  phase: 'done',
+                  result: resultLite,
+                  syncMeta: slimMeta,
+                  pack: 'overview',
+                  snapshotEncoding: null,
+                  snapshot: richWire,
+                  snapshotError: null,
+                  light: false,
+                  bootstrap: false,
+                  stageOnly: false,
+                });
+              } catch (classifyErr) {
+                console.warn(
+                  '[api/crm/sync] classify upgrade skipped',
+                  classifyErr,
+                );
+              }
             } catch (stageErr) {
               console.error('[api/crm/sync] stage-only bootstrap failed', stageErr);
-              const bootWire = {
-                v: 1 as const,
-                pack: 'overview' as const,
-                builtAt: new Date().toISOString(),
-                syncMeta: slimMeta,
-                callTotal,
-                interactionTotal: rowTotal,
-                leads: [] as [],
-                followUps: [] as [],
-                calls: [] as [],
-                projects: [] as string[],
-                executives: [] as string[],
-                reviews: [] as [],
-                overrides: [] as [],
-                dataHealth: {
-                  totalRows: rowTotal,
-                  validCustomers: rowTotal,
-                  unmatchedRows: 0,
-                  duplicateCustomerIds: [] as string[],
-                  duplicatePhones: [] as string[],
-                  missingCustomerIds: 0,
-                  missingPhones: 0,
-                  issues: [] as string[],
-                },
-                overviewMetrics: {
-                  totalCustomers: rowTotal,
-                  totalProcesses: rowTotal,
-                  totalInteractions: rowTotal,
-                  totalCalls: callTotal,
-                  byStage: {},
-                  byCategory: {
-                    GONE_DARK: 0,
-                    NOT_PICKING_UP: 0,
-                    MISMARKED_NI: 0,
-                    STUCK: 0,
-                    VERY_HIGH_INTENT: 0,
-                    HIGH_INTENT: 0,
-                    NONE: 0,
-                  },
-                  salesClosed: 0,
-                  notInterested: 0,
-                  conversionRate: 0,
-                  conversionDenominator: 0,
-                  conversionNumerator: 0,
-                  conversionDenominatorDescription:
-                    'Sales Closed + Not Interested + active pipeline (excludes Spam/DND)',
-                },
-              };
-              snapshot = bootWire;
-              snapshotEncoding = null;
-              pack = 'overview';
+              snapshotError =
+                stageErr instanceof Error
+                  ? stageErr.message
+                  : 'Stage snapshot failed';
               send({
-                ok: true,
-                phase: 'done',
-                result: {
-                  status: result.status,
-                  message: result.message,
-                  rowCount: rowTotal,
-                  callCount: callTotal,
-                },
+                ok: false,
+                phase: 'error',
+                error: snapshotError,
+                result: resultLite,
                 syncMeta: slimMeta,
-                pack,
-                snapshotEncoding: null,
-                snapshot: bootWire,
-                snapshotError: null,
-                light: true,
-                bootstrap: true,
               });
             }
             return;

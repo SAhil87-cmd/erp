@@ -431,11 +431,25 @@ export async function loadStageOnlySnapshot(): Promise<CrmSnapshot> {
  * Build a dashboard snapshot. On Vercel, skip huge per-customer call id lists and
  * immediately slim for API so sync responses don't OOM the serverless worker.
  */
-export async function loadSnapshot(): Promise<CrmSnapshot> {
-  if (IS_VERCEL && memory().snapshot) {
+export async function loadSnapshot(
+  opts?: { force?: boolean },
+): Promise<CrmSnapshot> {
+  if (opts?.force) invalidateSnapshotCache();
+  if (IS_VERCEL && memory().snapshot && !opts?.force) {
     return memory().snapshot!;
   }
   return buildSnapshotFromStore({ stageOnly: false });
+}
+
+/** Replace classifications on the in-memory slim snapshot (Vercel upgrade path). */
+export function attachClassifications(
+  classifications: ClassificationResult[],
+): CrmSnapshot | null {
+  const snap = memory().snapshot;
+  if (!snap) return null;
+  snap.classifications = classifications;
+  memory().snapshot = snap;
+  return snap;
 }
 
 export async function loadCallsForCustomer(
