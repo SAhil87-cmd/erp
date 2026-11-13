@@ -175,16 +175,21 @@ async function doSyncFromPublishedSheet(
       const callCount = calls.length;
 
       // Pull Notes from the CRM tab and stamp as per-person remark.
+      // On Vercel this second large CSV can push the request over platform limits —
+      // skip there so the primary call sync finishes reliably; localhost still merges.
       let derived = derivedRows;
       let remarkCount = 0;
-      try {
-        const crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
-        await yieldEventLoop();
-        const remarks = await loadCrmRemarksByCustomer(crmText);
-        derived = applyRemarksToRows(derivedRows, remarks);
-        remarkCount = remarks.size;
-      } catch (remarkErr) {
-        console.warn('[sheets] CRM Notes merge skipped', remarkErr);
+      const mergeRemarks = process.env.VERCEL !== '1';
+      if (mergeRemarks) {
+        try {
+          const crmText = await fetchPublishedCsv(getPublishedCrmCsvUrl());
+          await yieldEventLoop();
+          const remarks = await loadCrmRemarksByCustomer(crmText);
+          derived = applyRemarksToRows(derivedRows, remarks);
+          remarkCount = remarks.size;
+        } catch (remarkErr) {
+          console.warn('[sheets] CRM Notes merge skipped', remarkErr);
+        }
       }
 
       await saveRawRows(derived, 'google_sheets');
