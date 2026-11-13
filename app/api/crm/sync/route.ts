@@ -309,7 +309,8 @@ export async function POST(req: NextRequest) {
                   loadStageOnlySnapshot(),
                 ),
               );
-              const bootWire = toOverviewWire(stageSnap, { omitLeads: false });
+              // Omit lead rows here to keep the NDJSON frame small; upgrade adds them.
+              const bootWire = toOverviewWire(stageSnap, { omitLeads: true });
               snapshot = bootWire;
               snapshotEncoding = null;
               pack = 'overview';
@@ -322,7 +323,7 @@ export async function POST(req: NextRequest) {
                 snapshotEncoding: null,
                 snapshot: bootWire,
                 snapshotError: null,
-                light: false,
+                light: true,
                 bootstrap: true,
                 stageOnly: true,
               });
