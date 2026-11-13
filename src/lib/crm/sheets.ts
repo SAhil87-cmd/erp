@@ -142,12 +142,13 @@ let inFlightPublishedSync: Promise<SheetsSyncResult> | null = null;
  */
 export async function syncFromPublishedSheet(
   urlOverride?: string,
+  opts?: { onProgress?: (info: { phase: string; calls?: number; rows?: number }) => void },
 ): Promise<SheetsSyncResult> {
   if (inFlightPublishedSync && !urlOverride) {
     return inFlightPublishedSync;
   }
 
-  const run = doSyncFromPublishedSheet(urlOverride);
+  const run = doSyncFromPublishedSheet(urlOverride, opts);
   if (!urlOverride) {
     inFlightPublishedSync = run.finally(() => {
       inFlightPublishedSync = null;
@@ -159,8 +160,10 @@ export async function syncFromPublishedSheet(
 
 async function doSyncFromPublishedSheet(
   urlOverride?: string,
+  opts?: { onProgress?: (info: { phase: string; calls?: number; rows?: number }) => void },
 ): Promise<SheetsSyncResult> {
   const syncedAt = new Date().toISOString();
+  const onProgress = opts?.onProgress;
 
   try {
     // Default path: calls tab only. Importing the full 47k-row CRM tab OOMs / times
@@ -168,10 +171,19 @@ async function doSyncFromPublishedSheet(
     if (!urlOverride) {
       // Exact parity: full call sheet (no day/count caps). CRM Notes are merged
       // in a second pass (mergePublishedCrmRemarks) so Vercel can heartbeat between.
+      onProgress?.({ phase: 'fetching-calls' });
       let callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
       await yieldEventLoop();
+      onProgress?.({ phase: 'parsing-calls' });
       const { calls, errors, derivedRows } =
-        await importPublishedCallSheetAsync(callsText);
+        await importPublishedCallSheetAsync(callsText, {
+          onProgress: (info) =>
+            onProgress?.({
+              phase: 'parsing-calls',
+              calls: info.calls,
+              rows: info.rows,
+            }),
+        });
       callsText = '';
       await yieldEventLoop();
       await saveCalls(calls);
@@ -394,11 +406,16 @@ export async function mergePublishedCrmRemarks(): Promise<{
  * only when explicitly requested via mode=api.
  */
 export async function syncFromGoogleSheets(
-  options?: { mode?: 'published' | 'api' },
+  options?: {
+    mode?: 'published' | 'api';
+    onProgress?: (info: { phase: string; calls?: number; rows?: number }) => void;
+  },
 ): Promise<SheetsSyncResult> {
   const mode = options?.mode ?? 'published';
   if (mode === 'published') {
-    return syncFromPublishedSheet();
+    return syncFromPublishedSheet(undefined, {
+      onProgress: options?.onProgress,
+    });
   }
 
   const env = readSheetsEnv();

@@ -180,10 +180,30 @@ export async function POST(req: NextRequest) {
 
       try {
         send({ ok: true, phase: 'syncing-sheet' });
+        let lastParseLog = 0;
         const result = await awaitWithHeartbeats(
           send,
           'syncing-sheet',
-          syncFromGoogleSheets({ mode: body.mode ?? 'published' }),
+          syncFromGoogleSheets({
+            mode: body.mode ?? 'published',
+            onProgress: (info) => {
+              const now = Date.now();
+              if (now - lastParseLog < 1500) return;
+              lastParseLog = now;
+              try {
+                send({
+                  ok: true,
+                  phase: 'syncing-sheet',
+                  detail: info.phase,
+                  calls: info.calls,
+                  rows: info.rows,
+                  t: now,
+                });
+              } catch {
+                // stream closed
+              }
+            },
+          }),
         );
         const syncMeta = await getSyncStatus();
 

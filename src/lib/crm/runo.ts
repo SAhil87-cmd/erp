@@ -251,7 +251,11 @@ export function importCallsFromCsv(csvText: string): {
  */
 export async function importPublishedCallSheetAsync(
   csvText: string,
-  opts?: { maxAgeDays?: number; maxCalls?: number },
+  opts?: {
+    maxAgeDays?: number;
+    maxCalls?: number;
+    onProgress?: (info: { calls: number; rows: number }) => void;
+  },
 ): Promise<{
   calls: CallRecord[];
   errors: string[];
@@ -278,10 +282,12 @@ export async function importPublishedCallSheetAsync(
 
   const calls: CallRecord[] = [];
   const errors: string[] = [];
+  const maxErrors = 25;
   const byKey = new Map<string, Agg>();
   const statusFirst = new Map<string, string>();
   let idx = 0;
   let sinceYield = 0;
+  const onProgress = opts?.onProgress;
 
   await new Promise<void>((resolve, reject) => {
     Papa.parse<Record<string, string>>(csvText, {
@@ -329,13 +335,17 @@ export async function importPublishedCallSheetAsync(
         const phone = cell(row, 'Phone', 'mobileNum', 'Mobile Num', 'phone');
         const resolved = resolveCallCustomerKey(rawCustomerId, phone);
         if (!resolved) {
-          errors.push(
-            `Row ${idx}: missing Customer Id and usable Phone — retained with UNKNOWN id`,
-          );
+          if (errors.length < maxErrors) {
+            errors.push(
+              `Row ${idx}: missing Customer Id and usable Phone — retained with UNKNOWN id`,
+            );
+          }
         } else if (resolved.matchedByPhone) {
-          errors.push(
-            `Row ${idx}: missing Customer Id — linked by phone key ${resolved.key}`,
-          );
+          if (errors.length < maxErrors) {
+            errors.push(
+              `Row ${idx}: missing Customer Id — linked by phone key ${resolved.key}`,
+            );
+          }
         }
         const customerId = resolved?.key ?? `UNKNOWN-${idx}`;
 
@@ -473,10 +483,11 @@ export async function importPublishedCallSheetAsync(
 
         idx += 1;
         sinceYield += 1;
-        if (sinceYield >= 600) {
+        if (sinceYield >= 400) {
           sinceYield = 0;
           parser.pause();
-          setImmediate(() => parser.resume());
+          onProgress?.({ calls: calls.length, rows: byKey.size });
+          setTimeout(() => parser.resume(), 0);
         }
       },
       complete: () => resolve(),
@@ -485,6 +496,7 @@ export async function importPublishedCallSheetAsync(
   });
 
   await yieldEventLoop();
+  onProgress?.({ calls: calls.length, rows: byKey.size });
 
   const derivedRows: RawSheetRow[] = [...byKey.values()].map((agg, i) => {
     const sameStatusFirst = statusFirst.get(agg.customerId);
