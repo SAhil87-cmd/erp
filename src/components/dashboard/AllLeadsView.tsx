@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { ExportLeadsBar } from './ExportLeadsBar';
 import { InsufficientCallDataBanner } from './InsufficientCallDataBanner';
 import { LeadsTable } from './LeadsTable';
 import { MetricCards } from './MetricCards';
@@ -29,6 +30,7 @@ export function AllLeadsView() {
           <h1>All Leads</h1>
           <p>Full process list with primary intelligence category and recommended action.</p>
         </div>
+        <ExportLeadsBar rows={rows} label="All Leads" compact />
       </header>
       <MetricCards
         items={[

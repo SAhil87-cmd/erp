@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import type { IntelligenceCategory } from '@/lib/crm/types';
+import { ExportLeadsBar } from './ExportLeadsBar';
 import { InsufficientCallDataBanner } from './InsufficientCallDataBanner';
 import { LeadsTable } from './LeadsTable';
 import { MetricCards } from './MetricCards';
@@ -51,6 +52,7 @@ export function CategoryLeadView({
           <h1>{title}</h1>
           <p>{description}</p>
         </div>
+        <ExportLeadsBar rows={rows} label={title} compact />
       </header>
       <MetricCards
         items={[

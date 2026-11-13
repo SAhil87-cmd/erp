@@ -779,6 +779,50 @@ button {
   font-size: 0.92rem;
 }
 
+.report-card-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.lead-export-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.export-leads-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  min-width: 12rem;
+}
+
+.export-leads-bar.compact .export-leads-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.export-leads-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.export-leads-hint,
+.export-leads-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  text-align: right;
+}
+
+.export-leads-error {
+  color: #b91c1c;
+}
+
 .action-stack {
   display: flex;
   flex-direction: column;

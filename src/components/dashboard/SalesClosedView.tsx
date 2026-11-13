@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo } from 'react';
+import { computeOverviewMetrics } from '@/lib/crm/analytics';
+import { ExportLeadsBar } from './ExportLeadsBar';
 import { LeadsTable } from './LeadsTable';
 import { MetricCards } from './MetricCards';
+import { formatPct } from './labels';
 import { buildLeadRows, filterSnapshotClient } from './selectors';
 import { useCrmStore } from './useCrmStore';
-import { formatPct } from './labels';
-import { computeOverviewMetrics } from '@/lib/crm/analytics';
 
 export function SalesClosedView() {
   const snapshot = useCrmStore((s) => s.snapshot);
@@ -31,6 +32,7 @@ export function SalesClosedView() {
           <h1>Sales Closed</h1>
           <p>Won deals in the current filter set.</p>
         </div>
+        <ExportLeadsBar rows={rows} label="Sales Closed" compact />
       </header>
       <MetricCards
         items={[
