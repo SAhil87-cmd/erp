@@ -3,6 +3,7 @@
  * Fallback: importCallsFromCsv for offline / synthetic call data.
  */
 
+import { Readable } from 'node:stream';
 import Papa from 'papaparse';
 import { parseFlexibleDate, toKolkataIso } from './dates';
 import { normalizePhone } from './normalize';
@@ -250,7 +251,8 @@ export function importCallsFromCsv(csvText: string): {
  * heartbeats can flush during large Papa parses on Vercel.
  */
 export async function importPublishedCallSheetAsync(
-  csvText: string,
+  /** Full CSV text, or a stream (preferred on Vercel — avoids holding the whole sheet in RAM). */
+  source: string | Readable,
   opts?: {
     maxAgeDays?: number;
     maxCalls?: number;
@@ -290,7 +292,7 @@ export async function importPublishedCallSheetAsync(
   const onProgress = opts?.onProgress;
 
   await new Promise<void>((resolve, reject) => {
-    Papa.parse<Record<string, string>>(csvText, {
+    Papa.parse<Record<string, string>>(source as string, {
       header: true,
       skipEmptyLines: true,
       transformHeader: (h) => h.trim(),

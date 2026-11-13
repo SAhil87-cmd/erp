@@ -370,18 +370,13 @@ export async function POST(req: NextRequest) {
                   stageHistory: p.stageHistory,
                 }));
 
-                // Exact call aggregates first (today/exec charts), then classify.
-                const exactSlim = await awaitWithHeartbeats(
-                  send,
-                  'classifying',
-                  Promise.resolve().then(() =>
-                    slimSnapshotForApi({
-                      ...stageSnap,
-                      classifications: [],
-                      calls,
-                    }),
-                  ),
-                );
+                // Exact today/exec aggregates from every call, then classify for
+                // GD/Intent. callTotal is already exact from the sheet sync.
+                const exactSlim = slimSnapshotForApi({
+                  ...stageSnap,
+                  classifications: [],
+                  calls,
+                });
                 exactSlim.callTotal =
                   slimMeta.callCount ?? calls.length ?? exactSlim.callTotal;
 

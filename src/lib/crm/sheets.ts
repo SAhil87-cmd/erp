@@ -7,6 +7,7 @@
  * NEVER expose credentials to the frontend.
  */
 
+import { Readable } from 'node:stream';
 import {
   applyRemarksToRows,
   loadCrmRemarksByCustomer,
@@ -109,7 +110,7 @@ function detectDatasetKind(csvText: string): 'calls' | 'crm' | 'unknown' {
   return 'unknown';
 }
 
-async function fetchPublishedCsv(url: string): Promise<string> {
+async function fetchPublishedResponse(url: string): Promise<Response> {
   // Bust CDN / browser / Google intermediate caches so sync gets the latest publish.
   const bust = `t=${Date.now()}`;
   const fetchUrl = url.includes('?') ? `${url}&${bust}` : `${url}?${bust}`;
@@ -126,6 +127,14 @@ async function fetchPublishedCsv(url: string): Promise<string> {
   if (!res.ok) {
     throw new Error(`Published sheet fetch failed (${res.status} ${res.statusText})`);
   }
+  if (!res.body) {
+    throw new Error('Published sheet returned empty body');
+  }
+  return res;
+}
+
+async function fetchPublishedCsv(url: string): Promise<string> {
+  const res = await fetchPublishedResponse(url);
   const text = await res.text();
   if (!text.trim()) {
     throw new Error('Published sheet returned empty CSV');
@@ -172,11 +181,17 @@ async function doSyncFromPublishedSheet(
       // Exact parity: full call sheet (no day/count caps). CRM Notes are merged
       // in a second pass (mergePublishedCrmRemarks) so Vercel can heartbeat between.
       onProgress?.({ phase: 'fetching-calls' });
-      let callsText = await fetchPublishedCsv(getPublishedCallsCsvUrl());
+      // Stream-parse on Vercel so the full CSV string is never held beside the call array.
+      const callsRes = await fetchPublishedResponse(getPublishedCallsCsvUrl());
       await yieldEventLoop();
       onProgress?.({ phase: 'parsing-calls' });
+      const callSource = process.env.VERCEL
+        ? Readable.fromWeb(
+            callsRes.body as import('stream/web').ReadableStream<Uint8Array>,
+          )
+        : await callsRes.text();
       const { calls, errors, derivedRows } =
-        await importPublishedCallSheetAsync(callsText, {
+        await importPublishedCallSheetAsync(callSource, {
           onProgress: (info) =>
             onProgress?.({
               phase: 'parsing-calls',
@@ -184,7 +199,6 @@ async function doSyncFromPublishedSheet(
               rows: info.rows,
             }),
         });
-      callsText = '';
       await yieldEventLoop();
       await saveCalls(calls);
       const callCount = calls.length;
