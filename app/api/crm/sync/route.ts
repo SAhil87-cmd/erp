@@ -414,11 +414,14 @@ export async function POST(req: NextRequest) {
 
                 // Ship intelligence KPIs IMMEDIATELY (before disk slim / remarks /
                 // leads) so the browser never sticks on stage-only zeros.
-                const intelSlim = {
+                const intelSlim: CrmSnapshot = {
                   ...stageSnap,
                   classifications,
                   callTotal:
-                    slimMeta.callCount ?? diskCount ?? stageSnap.callTotal,
+                    slimMeta.callCount ??
+                    diskCount ??
+                    stageSnap.callTotal ??
+                    0,
                 };
                 replaceCachedSnapshot(intelSlim);
                 const kpiWire = toOverviewWire(intelSlim, { omitLeads: true });
@@ -439,7 +442,7 @@ export async function POST(req: NextRequest) {
                 });
 
                 // Exact today/exec aggregates from full disk history (best-effort).
-                let exactSlim = intelSlim;
+                let exactSlim: CrmSnapshot = intelSlim;
                 try {
                   exactSlim = offsets?.size
                     ? await awaitWithHeartbeats(

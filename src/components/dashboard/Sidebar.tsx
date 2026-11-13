@@ -23,7 +23,7 @@ export function Sidebar() {
     const pre = snapshot.overviewMetrics;
     const usePre =
       filtered.processes.length === 0 && Boolean(pre?.byCategory);
-    const preCat = pre?.byCategory ?? {};
+    const preCat: Record<string, number> = pre?.byCategory ?? {};
     return {
       'all-leads': usePre
         ? (pre?.totalCustomers ?? 0)
