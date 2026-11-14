@@ -18,15 +18,22 @@ export function Sidebar() {
     for (const c of filtered.classifications) {
       byCat[c.primaryCategory] = (byCat[c.primaryCategory] ?? 0) + 1;
     }
-    // Overview packs may omit lead rows; fall back to precomputed KPIs so the
-    // sidebar does not show zeros while intelligence metrics are on the cards.
+    // Overview packs may omit lead rows; fall back to precomputed KPIs / byStage
+    // so stage tabs (Not Interested, Cold Follow, Site Visit Scheduled) are not 0.
     const pre = snapshot.overviewMetrics;
     const usePre =
-      filtered.processes.length === 0 && Boolean(pre?.byCategory);
+      filtered.processes.length === 0 &&
+      Boolean(pre?.byCategory || pre?.byStage);
     const preCat: Record<string, number> = pre?.byCategory ?? {};
+    const byStage: Record<string, number> = pre?.byStage ?? {};
+    const stageCount = (...names: string[]) =>
+      names.reduce((sum, name) => sum + (byStage[name] ?? 0), 0);
+    const processStageCount = (...names: string[]) =>
+      filtered.processes.filter((p) => names.includes(p.currentStage)).length;
+
     return {
       'all-leads': usePre
-        ? (pre?.totalCustomers ?? 0)
+        ? (pre?.totalCustomers ?? pre?.totalProcesses ?? 0)
         : filtered.processes.length,
       'gone-dark': usePre
         ? (preCat.GONE_DARK ?? 0)
@@ -44,26 +51,26 @@ export function Sidebar() {
       'high-intent': usePre
         ? (preCat.HIGH_INTENT ?? 0)
         : (byCat.HIGH_INTENT ?? 0),
-      'not-interested': filtered.processes.filter(
-        (p) => p.currentStage === 'Not Interested',
-      ).length,
-      'cold-follow': filtered.processes.filter(
-        (p) =>
-          p.currentStage === 'Cold Followup' ||
-          p.currentStage === 'Cold' ||
-          p.currentStage === 'Followup',
-      ).length,
-      'site-visit-scheduled': filtered.processes.filter(
-        (p) => p.currentStage === 'Site Visit Scheduled',
-      ).length,
+      'not-interested':
+        filtered.processes.length === 0
+          ? (pre?.notInterested ?? stageCount('Not Interested'))
+          : processStageCount('Not Interested'),
+      'cold-follow':
+        filtered.processes.length === 0
+          ? stageCount('Cold Followup', 'Cold', 'Followup')
+          : processStageCount('Cold Followup', 'Cold', 'Followup'),
+      'site-visit-scheduled':
+        filtered.processes.length === 0
+          ? stageCount('Site Visit Scheduled')
+          : processStageCount('Site Visit Scheduled'),
       'reviewed-leads': filtered.reviews?.length
         ? new Set(snapshot.reviews.map((r) => r.customerId)).size
         : snapshot.reviews.length,
       override: snapshot.overrides.length,
-      'sales-closed': usePre
-        ? (pre?.salesClosed ?? 0)
-        : filtered.processes.filter((p) => p.currentStage === 'Sales Closed')
-            .length,
+      'sales-closed':
+        filtered.processes.length === 0
+          ? (pre?.salesClosed ?? stageCount('Sales Closed'))
+          : processStageCount('Sales Closed'),
     } as Record<DashboardTab, number>;
   }, [snapshot, filters]);
 

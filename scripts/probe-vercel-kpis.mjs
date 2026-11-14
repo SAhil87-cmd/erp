@@ -48,13 +48,39 @@ try {
           console.log(
             `${((Date.now() - started) / 1000).toFixed(1)}s`,
             row.phase,
+            row.detail || '',
+            row.calls != null ? `calls=${row.calls}` : '',
             row.stageOnly ? 'stageOnly' : '',
             row.bootstrap ? 'boot' : '',
             'snap',
             Boolean(row.snapshot),
           );
         }
-        if (row.phase === 'done' && row.snapshot) lastDone = row;
+        if (row.phase === 'done' && row.snapshot) {
+          const om = row.snapshot.overviewMetrics || {};
+          const byCat = om.byCategory || {};
+          console.log(
+            '  pack',
+            row.stageOnly ? 'stageOnly' : row.classified ? 'classified' : 'done',
+            'leads',
+            row.snapshot.leads?.length || 0,
+            'goneDark',
+            byCat.GONE_DARK ?? 0,
+            'mismarked',
+            byCat.MISMARKED_NI ?? 0,
+          );
+          // Prefer the richest classified pack when multiple done frames arrive.
+          if (
+            !lastDone ||
+            (row.classified && !lastDone.classified) ||
+            (row.stageOnly === false && lastDone.stageOnly !== false) ||
+            (row.light === false && lastDone.light !== false) ||
+            (row.snapshot?.leads?.length || 0) >
+              (lastDone.snapshot?.leads?.length || 0)
+          ) {
+            lastDone = row;
+          }
+        }
       } catch {
         // ignore
       }
