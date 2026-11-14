@@ -689,13 +689,9 @@ button {
 }
 
 .leads-table th button {
-  color: #fff;
-}
-
-.leads-table th button {
   border: 0;
   background: transparent;
-  color: inherit;
+  color: #fff;
   font: inherit;
   font-weight: 600;
   padding: 0;
