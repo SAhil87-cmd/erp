@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect } from 'react';
 import { calendarDateKey, todayCalendarKey } from '@/lib/crm/dates';
 import { AllLeadsView } from './AllLeadsView';
@@ -167,86 +168,106 @@ export function DashboardShell() {
     Boolean(latestDataDay) && Boolean(todayKey) && latestDataDay! < todayKey;
 
   return (
-    <div className="dash-shell">
-      <Sidebar />
-      <div className="dash-main">
-        <header className="dash-topbar">
-          <div>
-            <p className="topbar-kicker">Yashodhan Group · ERP</p>
-            <h1 className="topbar-title">{tabLabel}</h1>
+    <div className="erp-app">
+      <div className="erp-accent-bar" aria-hidden />
+      <header className="erp-masthead">
+        <div className="erp-masthead-brand">
+          <Image
+            src="/yashodhan-logo.png"
+            alt="Yashodhan Group"
+            width={220}
+            height={64}
+            className="erp-masthead-logo"
+            priority
+          />
+          <div className="erp-masthead-copy">
+            <p className="erp-masthead-kicker">Yashodhan Group</p>
+            <h1 className="erp-masthead-title">Sales Intelligence ERP</h1>
           </div>
-          <div className="topbar-meta">
-            {snapshot ? (
-              <span className="topbar-chip" title="Live sheet sync status">
-                {syncSource === 'google_sheets' && lastSyncAt
-                  ? `Synced ${new Date(lastSyncAt).toLocaleString('en-IN', {
-                      timeZone: 'Asia/Kolkata',
-                    })}`
-                  : `Built ${new Date(snapshot.builtAt).toLocaleString('en-IN', {
-                      timeZone: 'Asia/Kolkata',
-                    })}`}
-                {latestDataAt
-                  ? ` · Sheet ${new Date(latestDataAt).toLocaleString('en-IN', {
-                      timeZone: 'Asia/Kolkata',
-                    })}`
-                  : ''}
-              </span>
+        </div>
+        <div className="erp-masthead-actions">
+          {snapshot ? (
+            <span className="topbar-chip" title="Live sheet sync status">
+              {syncSource === 'google_sheets' && lastSyncAt
+                ? `Synced ${new Date(lastSyncAt).toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                  })}`
+                : `Built ${new Date(snapshot.builtAt).toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                  })}`}
+              {latestDataAt
+                ? ` · Sheet ${new Date(latestDataAt).toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                  })}`
+                : ''}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={loading}
+            onClick={() => {
+              void syncSheets().catch(() => undefined);
+            }}
+          >
+            Refresh sheet
+          </button>
+          {loading ? <span className="topbar-loading">Loading…</span> : null}
+        </div>
+      </header>
+
+      <div className="dash-shell">
+        <Sidebar />
+        <div className="dash-main">
+          <div className="erp-pagehead">
+            <div>
+              <p className="topbar-kicker">Workspace</p>
+              <h2 className="topbar-title">{tabLabel}</h2>
+            </div>
+          </div>
+          <GlobalFiltersBar />
+          <main className="dash-content">
+            {sourceBehindToday ? (
+              <div className="insufficient-banner" role="status">
+                <strong>Published sheet is behind</strong>
+                <span>
+                  Google&apos;s published CSV still ends on{' '}
+                  {new Date(latestDataAt!).toLocaleString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                  })}
+                  . The dashboard is synced to that publish — new calls after that will appear only
+                  after the sheet auto-republishes. In Google Sheets: File → Share → Publish to web →
+                  enable &quot;Automatically republish when changes are made&quot;, or open Data Health
+                  for details.
+                </span>
+              </div>
             ) : null}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={loading}
-              onClick={() => {
-                void syncSheets().catch(() => undefined);
-              }}
-            >
-              Refresh sheet
-            </button>
-            {loading ? <span className="topbar-loading">Loading…</span> : null}
-          </div>
-        </header>
-        <GlobalFiltersBar />
-        <main className="dash-content">
-          {sourceBehindToday ? (
-            <div className="insufficient-banner" role="status">
-              <strong>Published sheet is behind</strong>
-              <span>
-                Google&apos;s published CSV still ends on{' '}
-                {new Date(latestDataAt!).toLocaleString('en-IN', {
-                  timeZone: 'Asia/Kolkata',
-                })}
-                . The dashboard is synced to that publish — new calls after that will appear only
-                after the sheet auto-republishes. In Google Sheets: File → Share → Publish to web →
-                enable &quot;Automatically republish when changes are made&quot;, or open Data Health
-                for details.
-              </span>
-            </div>
-          ) : null}
-          {error ? (
-            <div className="error-banner" role="alert">
-              {error}
-              <button
-                type="button"
-                className="btn-ghost"
-                disabled={loading}
-                onClick={() => {
-                  void syncSheets().catch(() => undefined);
-                }}
-              >
-                Retry
-              </button>
-            </div>
-          ) : null}
-          {!snapshot && loading ? (
-            <div className="empty-state">
-              Syncing published Google Sheet… first load can take 1–2 minutes. Keep this tab open.
-            </div>
-          ) : null}
-          {snapshot ? <ActiveView /> : null}
-          {!snapshot && !loading && !error ? (
-            <div className="empty-state">No CRM data loaded.</div>
-          ) : null}
-        </main>
+            {error ? (
+              <div className="error-banner" role="alert">
+                {error}
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={loading}
+                  onClick={() => {
+                    void syncSheets().catch(() => undefined);
+                  }}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : null}
+            {!snapshot && loading ? (
+              <div className="empty-state">
+                Syncing published Google Sheet… first load can take 1–2 minutes. Keep this tab open.
+              </div>
+            ) : null}
+            {snapshot ? <ActiveView /> : null}
+            {!snapshot && !loading && !error ? (
+              <div className="empty-state">No CRM data loaded.</div>
+            ) : null}
+          </main>
+        </div>
       </div>
       <CustomerDrawer />
     </div>

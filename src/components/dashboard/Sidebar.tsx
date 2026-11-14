@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import { useMemo } from 'react';
 import { NAV_SECTIONS, TAB_ITEMS, type DashboardTab } from './labels';
 import { filterSnapshotClient } from './selectors';
@@ -79,16 +78,9 @@ export function Sidebar() {
 
   return (
     <aside className="dash-sidebar">
-      <div className="sidebar-brand">
-        <Image
-          src="/yashodhan-logo.png"
-          alt="Yashodhan Group"
-          width={200}
-          height={56}
-          className="sidebar-logo"
-          priority
-        />
-        <p className="sidebar-product">Sales Intelligence ERP</p>
+      <div className="sidebar-head">
+        <p className="sidebar-head-title">Modules</p>
+        <p className="sidebar-head-sub">Sales intelligence</p>
       </div>
 
       <nav className="sidebar-nav" aria-label="ERP modules">
@@ -105,7 +97,7 @@ export function Sidebar() {
                     className={`sidebar-link${activeTab === id ? ' active' : ''}`}
                     onClick={() => setActiveTab(id)}
                   >
-                    <span>{LABEL_BY_ID[id]}</span>
+                    <span className="sidebar-link-label">{LABEL_BY_ID[id]}</span>
                     {typeof count === 'number' ? (
                       <em>{count.toLocaleString('en-IN')}</em>
                     ) : null}
@@ -118,8 +110,8 @@ export function Sidebar() {
       </nav>
 
       <footer className="sidebar-footer">
-        <span>Yashodhan Group</span>
-        <span>Asia/Kolkata · Live sheet sync</span>
+        <span>Asia/Kolkata</span>
+        <span>Live Google Sheet sync</span>
       </footer>
     </aside>
   );

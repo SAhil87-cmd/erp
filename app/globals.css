@@ -12,32 +12,32 @@
   --brand-black: #1a1a1a;
   --brand-mark: #5b6578;
 
-  /* ERP shell */
-  --sidebar: #1d59bb;
-  --sidebar-elevated: #2463c9;
-  --sidebar-hover: #2a6ad0;
-  --sidebar-active: #164792;
-  --sidebar-text: #ffffff;
-  --sidebar-muted: #d7e8ff;
-  --sidebar-section: #b7d6ff;
+  /* Light ERP rail + bright workspace */
+  --sidebar: #ffffff;
+  --sidebar-elevated: #f4f8ff;
+  --sidebar-hover: #eaf3ff;
+  --sidebar-active: #1d59bb;
+  --sidebar-text: #1a1a1a;
+  --sidebar-muted: #5b6578;
+  --sidebar-section: #1d59bb;
 
-  --bg: #fff8d6;
+  --bg: #eef5ff;
   --surface: #ffffff;
   --surface-muted: #fef3b3;
   --ink: #1a1a1a;
   --ink-muted: #5b6578;
-  --line: #eadfa0;
-  --line-strong: #d9cc7e;
+  --line: #d5e4f7;
+  --line-strong: #b7cff0;
 
   --blue: var(--brand-blue);
   --teal: #0f9a8a;
   --urgent: #dc2626;
   --warning: var(--brand-yellow);
   --opportunity: #1a7a3c;
-  --shadow: 0 1px 2px rgba(29, 89, 187, 0.08), 0 6px 18px rgba(29, 89, 187, 0.08);
+  --shadow: 0 8px 24px rgba(29, 89, 187, 0.08);
   --font-body: var(--font-body);
-  --radius: 8px;
-  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-sm: 8px;
 }
 
 @theme inline {
@@ -77,12 +77,91 @@ button {
   cursor: pointer;
 }
 
-/* ── Shell ─────────────────────────────────────────────── */
+/* ── App chrome ────────────────────────────────────────── */
+.erp-app {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 420px at 12% -10%, rgba(118, 185, 255, 0.55), transparent 60%),
+    radial-gradient(700px 380px at 90% 0%, rgba(254, 189, 25, 0.35), transparent 55%),
+    linear-gradient(180deg, #fef3b3 0%, #eef5ff 42%, #e8f1ff 100%);
+}
+
+.erp-accent-bar {
+  height: 6px;
+  background: linear-gradient(
+    90deg,
+    #1d59bb 0%,
+    #76b9ff 35%,
+    #fef3b3 65%,
+    #febd19 100%
+  );
+}
+
+.erp-masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.85rem 1.5rem;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.erp-masthead-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.erp-masthead-logo {
+  width: auto;
+  height: 52px;
+  object-fit: contain;
+  display: block;
+}
+
+.erp-masthead-copy {
+  min-width: 0;
+  padding-left: 1rem;
+  border-left: 2px solid var(--brand-yellow);
+}
+
+.erp-masthead-kicker {
+  margin: 0;
+  color: var(--brand-blue);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.erp-masthead-title {
+  margin: 0.1rem 0 0;
+  color: var(--brand-black);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.erp-masthead-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .dash-shell {
   display: grid;
-  grid-template-columns: 268px 1fr;
-  min-height: 100vh;
-  background: var(--bg);
+  grid-template-columns: 250px 1fr;
+  min-height: calc(100vh - 90px);
+  gap: 0;
+  padding: 0.85rem 1rem 1.1rem;
 }
 
 .dash-sidebar {
@@ -91,36 +170,33 @@ button {
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: 96px;
+  height: calc(100vh - 112px);
   overflow: auto;
-  border-right: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
-.sidebar-brand {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.95rem 1rem 0.8rem;
+.sidebar-head {
+  padding: 0.95rem 1rem 0.75rem;
+  background: linear-gradient(135deg, #1d59bb 0%, #76b9ff 100%);
+  color: #fff;
   border-bottom: 3px solid var(--brand-yellow);
-  background: var(--brand-white);
 }
 
-.sidebar-logo {
-  width: 100%;
-  height: auto;
-  max-width: 220px;
-  object-fit: contain;
-  display: block;
-}
-
-.sidebar-product {
+.sidebar-head-title {
   margin: 0;
-  color: var(--brand-blue);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-head-sub {
+  margin: 0.15rem 0 0;
+  font-size: 0.7rem;
+  opacity: 0.9;
+  font-weight: 500;
 }
 
 .sidebar-nav {
@@ -134,8 +210,8 @@ button {
 .sidebar-section-title {
   margin: 0 0 0.35rem 0.55rem;
   color: var(--sidebar-section);
-  font-size: 0.65rem;
-  font-weight: 600;
+  font-size: 0.62rem;
+  font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -143,7 +219,7 @@ button {
 .sidebar-section-links {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  gap: 0.15rem;
 }
 
 .sidebar-link {
@@ -156,22 +232,26 @@ button {
   background: transparent;
   color: var(--sidebar-text);
   text-align: left;
-  padding: 0.48rem 0.65rem;
+  padding: 0.5rem 0.65rem;
   border-radius: var(--radius-sm);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 500;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+
+.sidebar-link-label {
+  min-width: 0;
 }
 
 .sidebar-link em {
   font-style: normal;
-  color: var(--sidebar-muted);
-  font-size: 0.7rem;
-  font-weight: 600;
+  color: var(--brand-blue);
+  font-size: 0.68rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  background: rgba(255, 255, 255, 0.08);
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  background: rgba(118, 185, 255, 0.25);
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
   min-width: 1.5rem;
   text-align: center;
 }
@@ -183,82 +263,71 @@ button {
 .sidebar-link.active {
   background: var(--sidebar-active);
   color: #fff;
-  box-shadow: inset 3px 0 0 var(--brand-yellow);
+  transform: translateX(2px);
 }
 
 .sidebar-link.active em {
-  background: rgba(254, 189, 25, 0.22);
-  color: #ffe2a8;
+  background: var(--brand-yellow);
+  color: var(--brand-black);
 }
 
 .sidebar-footer {
   padding: 0.85rem 1rem 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  border-top: 1px solid var(--line);
   color: var(--sidebar-muted);
   font-size: 0.68rem;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  background: var(--brand-blue-deep);
+  background: #f8fbff;
 }
 
 .dash-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background:
-    linear-gradient(180deg, rgba(118, 185, 255, 0.28) 0%, transparent 180px),
-    var(--bg);
+  margin-left: 0.85rem;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.dash-topbar {
+.erp-pagehead {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.85rem 1.35rem;
-  background: rgba(255, 255, 255, 0.88);
+  padding: 1rem 1.25rem 0.75rem;
+  background: linear-gradient(90deg, rgba(254, 243, 179, 0.75), rgba(118, 185, 255, 0.18));
   border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(8px);
-  position: sticky;
-  top: 0;
-  z-index: 20;
 }
 
 .topbar-kicker {
   margin: 0;
-  color: var(--ink-muted);
+  color: var(--brand-blue);
   font-size: 0.68rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
 
 .topbar-title {
-  margin: 0.1rem 0 0;
-  font-size: 1.2rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--brand-blue);
-}
-
-.topbar-meta {
-  color: var(--ink-muted);
-  font-size: 0.75rem;
-  display: flex;
-  gap: 0.65rem;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  margin: 0.12rem 0 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--brand-black);
 }
 
 .topbar-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.28rem 0.55rem;
+  padding: 0.35rem 0.65rem;
   border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  background: #fff;
   border: 1px solid var(--line);
   color: var(--ink-muted);
   font-size: 0.72rem;
@@ -274,7 +343,8 @@ button {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
-  background: var(--brand-yellow);
+  background: var(--brand-blue);
+  box-shadow: 0 0 0 3px rgba(118, 185, 255, 0.45);
   flex-shrink: 0;
 }
 
@@ -284,10 +354,10 @@ button {
 }
 
 .dash-content {
-  padding: 1rem 1.35rem 1.75rem;
+  padding: 1rem 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 0.9rem;
 }
 
 /* ── Filters ───────────────────────────────────────────── */
@@ -295,9 +365,12 @@ button {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr)) auto;
   gap: 0.55rem;
-  padding: 0.7rem 1.35rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  margin: 0.85rem 1.25rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #ffffff, #f7fbff);
+  box-shadow: 0 2px 8px rgba(29, 89, 187, 0.05);
 }
 
 .filter-field {
@@ -427,26 +500,27 @@ button {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 0.95rem 1rem;
+  padding: 1rem 1.05rem;
 }
 
 .section-title {
   margin: 0 0 0.75rem;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--brand-blue-deep);
 }
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+  gap: 0.75rem;
 }
 
 .metric-card {
-  background: var(--surface);
+  background: #fff;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0.8rem 0.9rem;
+  padding: 0.95rem 1rem 0.85rem;
   position: relative;
   overflow: hidden;
   box-shadow: var(--shadow);
@@ -456,27 +530,37 @@ button {
   content: "";
   position: absolute;
   left: 0;
+  right: 0;
   top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--brand-yellow);
+  height: 5px;
+  background: linear-gradient(90deg, var(--brand-blue), var(--brand-sky));
 }
 
 .metric-card.tone-urgent::before {
-  background: var(--urgent);
+  background: linear-gradient(90deg, #dc2626, #fb7185);
 }
 .metric-card.tone-warning::before {
-  background: var(--brand-yellow);
+  background: linear-gradient(90deg, var(--brand-yellow), #fef3b3);
 }
 .metric-card.tone-opportunity::before {
-  background: var(--opportunity);
+  background: linear-gradient(90deg, #1a7a3c, #76b9ff);
 }
 .metric-card.tone-neutral::before {
-  background: var(--brand-blue);
+  background: linear-gradient(90deg, var(--brand-sky), var(--brand-cream));
+}
+
+.metric-card:nth-child(4n + 2)::before {
+  background: linear-gradient(90deg, var(--brand-sky), var(--brand-blue));
+}
+.metric-card:nth-child(4n + 3)::before {
+  background: linear-gradient(90deg, var(--brand-yellow), var(--brand-cream));
+}
+.metric-card:nth-child(4n)::before {
+  background: linear-gradient(90deg, var(--brand-cream), var(--brand-sky));
 }
 
 .metric-label {
-  margin: 0;
+  margin: 0.15rem 0 0;
   color: var(--ink-muted);
   font-size: 0.68rem;
   font-weight: 600;
@@ -485,12 +569,13 @@ button {
 }
 
 .metric-value {
-  margin: 0.35rem 0 0;
-  font-size: 1.4rem;
+  margin: 0.4rem 0 0;
+  font-size: 1.55rem;
   font-weight: 700;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  color: var(--brand-blue-deep);
 }
 
 .metric-hint {
@@ -592,8 +677,8 @@ button {
 }
 
 .leads-table th {
-  background: var(--surface-muted);
-  color: var(--ink-muted);
+  background: linear-gradient(180deg, #1d59bb, #164792);
+  color: #fff;
   font-weight: 600;
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -601,6 +686,10 @@ button {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+
+.leads-table th button {
+  color: #fff;
 }
 
 .leads-table th button {
@@ -999,7 +1088,7 @@ button {
 
 @media (max-width: 1100px) {
   .dash-shell {
-    grid-template-columns: 240px 1fr;
+    grid-template-columns: 220px 1fr;
   }
 
   .global-filters {
@@ -1014,12 +1103,24 @@ button {
 }
 
 @media (max-width: 820px) {
+  .erp-masthead {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .dash-shell {
     grid-template-columns: 1fr;
+    padding: 0.65rem;
+  }
+
+  .dash-main {
+    margin-left: 0;
+    margin-top: 0.75rem;
   }
 
   .dash-sidebar {
     position: relative;
+    top: 0;
     height: auto;
     max-height: none;
   }
@@ -1027,11 +1128,6 @@ button {
   .sidebar-nav {
     display: grid;
     grid-template-columns: 1fr;
-  }
-
-  .dash-topbar {
-    flex-direction: column;
-    align-items: flex-start;
   }
 
   .topbar-chip {
