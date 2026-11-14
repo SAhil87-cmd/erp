@@ -21,7 +21,11 @@ export type DashboardTab =
   | 'reports'
   | 'data-health';
 
-export const TAB_ITEMS: { id: DashboardTab; label: string; category?: IntelligenceCategory }[] = [
+export const TAB_ITEMS: {
+  id: DashboardTab;
+  label: string;
+  category?: IntelligenceCategory;
+}[] = [
   { id: 'executive-overview', label: 'Executive Overview' },
   { id: 'gone-dark', label: 'Gone Dark', category: 'GONE_DARK' },
   { id: 'not-picking-up', label: 'Not Picking Up', category: 'NOT_PICKING_UP' },
@@ -41,6 +45,40 @@ export const TAB_ITEMS: { id: DashboardTab; label: string; category?: Intelligen
   { id: 'project-intelligence', label: 'Project Intelligence' },
   { id: 'reports', label: 'Reports' },
   { id: 'data-health', label: 'Data Health & Settings' },
+];
+
+/** Grouped sidebar for ERP navigation. */
+export const NAV_SECTIONS: {
+  title: string;
+  items: DashboardTab[];
+}[] = [
+  { title: 'Overview', items: ['executive-overview', 'todays-activity'] },
+  {
+    title: 'Recovery',
+    items: ['gone-dark', 'not-picking-up', 'mismarked-ni', 'stuck-leads'],
+  },
+  {
+    title: 'Intent',
+    items: ['very-high-intent', 'high-intent'],
+  },
+  {
+    title: 'Pipeline',
+    items: [
+      'site-visit-scheduled',
+      'cold-follow',
+      'not-interested',
+      'sales-closed',
+    ],
+  },
+  {
+    title: 'Leads',
+    items: ['all-leads', 'reviewed-leads', 'override'],
+  },
+  {
+    title: 'Analytics',
+    items: ['executive-performance', 'project-intelligence', 'reports'],
+  },
+  { title: 'System', items: ['data-health'] },
 ];
 
 export const CATEGORY_LABELS: Record<IntelligenceCategory, string> = {

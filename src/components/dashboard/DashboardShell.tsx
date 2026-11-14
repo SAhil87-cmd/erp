@@ -172,21 +172,21 @@ export function DashboardShell() {
       <div className="dash-main">
         <header className="dash-topbar">
           <div>
-            <p className="topbar-kicker">Sales Intelligence</p>
+            <p className="topbar-kicker">Yashodhan Group · Sales Intelligence ERP</p>
             <h1 className="topbar-title">{tabLabel}</h1>
           </div>
           <div className="topbar-meta">
             {snapshot ? (
-              <span>
+              <span className="topbar-chip" title="Live sheet sync status">
                 {syncSource === 'google_sheets' && lastSyncAt
-                  ? `Sheet synced ${new Date(lastSyncAt).toLocaleString('en-IN', {
+                  ? `Synced ${new Date(lastSyncAt).toLocaleString('en-IN', {
                       timeZone: 'Asia/Kolkata',
                     })}`
                   : `Built ${new Date(snapshot.builtAt).toLocaleString('en-IN', {
                       timeZone: 'Asia/Kolkata',
                     })}`}
                 {latestDataAt
-                  ? ` · Latest in sheet ${new Date(latestDataAt).toLocaleString('en-IN', {
+                  ? ` · Sheet ${new Date(latestDataAt).toLocaleString('en-IN', {
                       timeZone: 'Asia/Kolkata',
                     })}`
                   : ''}
@@ -194,7 +194,7 @@ export function DashboardShell() {
             ) : null}
             <button
               type="button"
-              className="btn-ghost"
+              className="btn-primary"
               disabled={loading}
               onClick={() => {
                 void syncSheets().catch(() => undefined);

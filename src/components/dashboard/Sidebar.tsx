@@ -1,9 +1,14 @@
 'use client';
 
-import { TAB_ITEMS, type DashboardTab } from './labels';
-import { useCrmStore } from './useCrmStore';
-import { filterSnapshotClient } from './selectors';
+import Image from 'next/image';
 import { useMemo } from 'react';
+import { NAV_SECTIONS, TAB_ITEMS, type DashboardTab } from './labels';
+import { filterSnapshotClient } from './selectors';
+import { useCrmStore } from './useCrmStore';
+
+const LABEL_BY_ID = Object.fromEntries(
+  TAB_ITEMS.map((t) => [t.id, t.label]),
+) as Record<DashboardTab, string>;
 
 export function Sidebar() {
   const activeTab = useCrmStore((s) => s.activeTab);
@@ -18,8 +23,6 @@ export function Sidebar() {
     for (const c of filtered.classifications) {
       byCat[c.primaryCategory] = (byCat[c.primaryCategory] ?? 0) + 1;
     }
-    // Overview packs may omit lead rows; fall back to precomputed KPIs / byStage
-    // so stage tabs (Not Interested, Cold Follow, Site Visit Scheduled) are not 0.
     const pre = snapshot.overviewMetrics;
     const usePre =
       filtered.processes.length === 0 &&
@@ -77,31 +80,46 @@ export function Sidebar() {
   return (
     <aside className="dash-sidebar">
       <div className="sidebar-brand">
-        <span className="sidebar-brand-mark">YG</span>
-        <div>
-          <strong>Yashodhan Group</strong>
-          <span>Sales Intelligence</span>
-        </div>
+        <Image
+          src="/yashodhan-logo.png"
+          alt="Yashodhan Group"
+          width={200}
+          height={56}
+          className="sidebar-logo"
+          priority
+        />
+        <p className="sidebar-product">Sales Intelligence ERP</p>
       </div>
-      <nav className="sidebar-nav" aria-label="Dashboard sections">
-        {TAB_ITEMS.map((item) => {
-          const count = counts[item.id];
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={`sidebar-link${activeTab === item.id ? ' active' : ''}`}
-              onClick={() => setActiveTab(item.id)}
-            >
-              <span>{item.label}</span>
-              {typeof count === 'number' ? <em>{count}</em> : null}
-            </button>
-          );
-        })}
+
+      <nav className="sidebar-nav" aria-label="ERP modules">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title} className="sidebar-section">
+            <p className="sidebar-section-title">{section.title}</p>
+            <div className="sidebar-section-links">
+              {section.items.map((id) => {
+                const count = counts[id];
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`sidebar-link${activeTab === id ? ' active' : ''}`}
+                    onClick={() => setActiveTab(id)}
+                  >
+                    <span>{LABEL_BY_ID[id]}</span>
+                    {typeof count === 'number' ? (
+                      <em>{count.toLocaleString('en-IN')}</em>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
+
       <footer className="sidebar-footer">
-        <span>Call-aware classifications</span>
-        <span>Asia/Kolkata</span>
+        <span>Yashodhan Group</span>
+        <span>Asia/Kolkata · Live sheet sync</span>
       </footer>
     </aside>
   );
