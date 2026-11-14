@@ -172,7 +172,7 @@ export function DashboardShell() {
       <div className="dash-main">
         <header className="dash-topbar">
           <div>
-            <p className="topbar-kicker">Yashodhan Group · Sales Intelligence ERP</p>
+            <p className="topbar-kicker">Yashodhan Group · ERP</p>
             <h1 className="topbar-title">{tabLabel}</h1>
           </div>
           <div className="topbar-meta">
