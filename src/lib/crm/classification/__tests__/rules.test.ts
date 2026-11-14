@@ -660,6 +660,66 @@ describe('classifyLead engine — priority & exclusions', () => {
     }
   });
 
+  it('keeps exec Not Interested out of Intent/Stuck even after completed visits', () => {
+    const result = classifyLead({
+      customerId: 'X',
+      salesProcessId: 'X::p',
+      currentStage: 'Not Interested',
+      stageEnteredAt: iso(2026, 2, 1),
+      stageHistory: [
+        { stage: 'Site Visit Done', stageRaw: 'Site Visit Done', stageEntryDate: iso(2026, 1, 10) },
+        { stage: 'Revisit Done', stageRaw: 'Revisit Done', stageEntryDate: iso(2026, 1, 20) },
+      ],
+      calls: [
+        call({ callAt: iso(2026, 1, 11), answered: true, durationSeconds: 120 }),
+        call({ callAt: iso(2026, 1, 21), answered: true, durationSeconds: 90 }),
+        call({ callAt: iso(2026, 2, 2), answered: true, durationSeconds: 60 }),
+        call({ callAt: iso(2026, 2, 4), answered: true, durationSeconds: 45 }),
+        call({ callAt: iso(2026, 2, 6), answered: true, durationSeconds: 30 }),
+      ],
+    });
+    expect(result.primaryCategory).not.toBe('VERY_HIGH_INTENT');
+    expect(result.primaryCategory).not.toBe('HIGH_INTENT');
+    expect(result.primaryCategory).not.toBe('STUCK');
+    expect(result.underlyingFlags).not.toContain('VERY_HIGH_INTENT');
+    expect(result.underlyingFlags).not.toContain('HIGH_INTENT');
+    expect(result.underlyingFlags).not.toContain('STUCK');
+  });
+
+  it('treats NI remark as Not Interested lock even if stage is still Site Visit Done', () => {
+    const result = classifyLead({
+      customerId: 'X',
+      salesProcessId: 'X::p',
+      currentStage: 'Site Visit Done',
+      stageEnteredAt: iso(2026, 1, 10),
+      remark: 'Customer not interested after visit',
+      calls: [call({ callAt: iso(2026, 1, 12), answered: true })],
+    });
+    expect(result.primaryCategory).not.toBe('HIGH_INTENT');
+    expect(result.underlyingFlags).not.toContain('HIGH_INTENT');
+  });
+
+  it('keeps Cold Follow out of Stuck / Intent', () => {
+    const result = classifyLead({
+      customerId: 'X',
+      salesProcessId: 'X::p',
+      currentStage: 'Cold Followup',
+      stageEnteredAt: iso(2026, 1, 5),
+      stageHistory: [
+        { stage: 'Site Visit Done', stageRaw: 'Site Visit Done', stageEntryDate: iso(2026, 1, 1) },
+      ],
+      calls: [
+        call({ callAt: iso(2026, 1, 6), answered: true }),
+        call({ callAt: iso(2026, 1, 8), answered: true }),
+        call({ callAt: iso(2026, 1, 10), answered: true }),
+      ],
+    });
+    expect(result.primaryCategory).not.toBe('STUCK');
+    expect(result.primaryCategory).not.toBe('HIGH_INTENT');
+    expect(result.underlyingFlags).not.toContain('STUCK');
+    expect(result.underlyingFlags).not.toContain('HIGH_INTENT');
+  });
+
   it('returns VERY_HIGH_INTENT when clean Revisit Done', () => {
     const result = classifyLead({
       customerId: 'CUST-VHI-001',

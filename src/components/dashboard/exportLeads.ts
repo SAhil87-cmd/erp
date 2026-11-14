@@ -15,13 +15,16 @@ export type LeadExportFormat = 'csv' | 'xlsx' | 'pdf';
 export type LeadExportKind =
   | IntelligenceCategory
   | 'ALL_LEADS'
-  | 'SALES_CLOSED';
+  | 'SALES_CLOSED'
+  | 'NOT_INTERESTED_STAGE'
+  | 'COLD_FOLLOW_STAGE';
 
 export const LEAD_EXPORT_KINDS: Array<{
   id: LeadExportKind;
   label: string;
   category?: IntelligenceCategory | IntelligenceCategory[];
   stage?: CanonicalStage;
+  stages?: CanonicalStage[];
 }> = [
   { id: 'GONE_DARK', label: 'Gone Dark', category: 'GONE_DARK' },
   { id: 'NOT_PICKING_UP', label: 'Not Picking Up', category: 'NOT_PICKING_UP' },
@@ -33,6 +36,16 @@ export const LEAD_EXPORT_KINDS: Array<{
     category: 'VERY_HIGH_INTENT',
   },
   { id: 'HIGH_INTENT', label: 'High Intent', category: 'HIGH_INTENT' },
+  {
+    id: 'NOT_INTERESTED_STAGE',
+    label: 'Not Interested',
+    stage: 'Not Interested',
+  },
+  {
+    id: 'COLD_FOLLOW_STAGE',
+    label: 'Cold Follow',
+    stages: ['Cold Followup', 'Cold', 'Followup'],
+  },
   {
     id: 'ALL_LEADS',
     label: 'All Leads',

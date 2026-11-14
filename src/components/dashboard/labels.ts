@@ -8,6 +8,8 @@ export type DashboardTab =
   | 'stuck-leads'
   | 'very-high-intent'
   | 'high-intent'
+  | 'not-interested'
+  | 'cold-follow'
   | 'all-leads'
   | 'reviewed-leads'
   | 'override'
@@ -26,6 +28,8 @@ export const TAB_ITEMS: { id: DashboardTab; label: string; category?: Intelligen
   { id: 'stuck-leads', label: 'Stuck Leads', category: 'STUCK' },
   { id: 'very-high-intent', label: 'Very High Intent', category: 'VERY_HIGH_INTENT' },
   { id: 'high-intent', label: 'High Intent', category: 'HIGH_INTENT' },
+  { id: 'not-interested', label: 'Not Interested' },
+  { id: 'cold-follow', label: 'Cold Follow' },
   { id: 'all-leads', label: 'All Leads' },
   { id: 'reviewed-leads', label: 'Reviewed Leads' },
   { id: 'override', label: 'Not Gone Dark / Override' },

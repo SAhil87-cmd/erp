@@ -11,8 +11,10 @@
 
 import {
   DEFAULT_CLASSIFICATION_CONFIG,
+  EXEC_OWNED_FOLLOW_STAGES,
   INTENT_OVERRIDE_CATEGORIES,
   TERMINAL_EXCLUSION_STAGES,
+  remarkIndicatesNotInterested,
   type ClassificationConfig,
 } from './config';
 import {
@@ -40,6 +42,8 @@ export interface ClassifyLeadInput {
   currentStage: CanonicalStage;
   stageEnteredAt: string | null;
   stageHistory?: StageHistoryEntry[] | null;
+  /** Sheet Notes / exec remark — can lock the lead as Not Interested. */
+  remark?: string | null;
   calls: CallRecord[] | null | undefined;
   config?: ClassificationConfig;
 }
@@ -121,12 +125,27 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
   if (stuck.flagged) underlyingFlags.push('STUCK');
 
   const terminal = TERMINAL_EXCLUSION_STAGES.includes(input.currentStage);
-  const goneDarkActive = goneDark.flagged;
+  const execMarkedNi =
+    input.currentStage === 'Not Interested' ||
+    remarkIndicatesNotInterested(input.remark);
+  const execOwnedFollow = EXEC_OWNED_FOLLOW_STAGES.includes(input.currentStage);
+  const goneDarkActive = goneDark.flagged && !execMarkedNi;
 
   // Intent flags: full ruleResults always retained above for audit.
-  // Do not count HI/VHI alongside Gone Dark or terminal exclusions.
-  let vhiFlagged = veryHighIntent.flagged && !terminal && !goneDarkActive;
-  let hiFlagged = highIntent.flagged && !terminal && !goneDarkActive;
+  // Do not count HI/VHI alongside Gone Dark, terminal exclusions, or when the
+  // executive has marked Not Interested / Cold Follow (even after visits).
+  let vhiFlagged =
+    veryHighIntent.flagged &&
+    !terminal &&
+    !goneDarkActive &&
+    !execMarkedNi &&
+    !execOwnedFollow;
+  let hiFlagged =
+    highIntent.flagged &&
+    !terminal &&
+    !goneDarkActive &&
+    !execMarkedNi &&
+    !execOwnedFollow;
 
   // Very High Intent supersedes High Intent when both would apply.
   if (vhiFlagged) {
@@ -135,6 +154,25 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
 
   if (vhiFlagged) underlyingFlags.push('VERY_HIGH_INTENT');
   if (hiFlagged) underlyingFlags.push('HIGH_INTENT');
+
+  // Strip flags the exec stage owns so they never become primary.
+  const dropFlag = (cat: IntelligenceCategory) => {
+    const i = underlyingFlags.indexOf(cat);
+    if (i >= 0) underlyingFlags.splice(i, 1);
+  };
+  if (execMarkedNi) {
+    dropFlag('GONE_DARK');
+    dropFlag('STUCK');
+    dropFlag('VERY_HIGH_INTENT');
+    dropFlag('HIGH_INTENT');
+    dropFlag('NOT_PICKING_UP');
+    // Keep MISMARKED_NI when call evidence says the NI mark is suspicious.
+  }
+  if (execOwnedFollow) {
+    dropFlag('STUCK');
+    dropFlag('VERY_HIGH_INTENT');
+    dropFlag('HIGH_INTENT');
+  }
 
   void INTENT_OVERRIDE_CATEGORIES;
 
@@ -160,6 +198,9 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
       break;
     }
   }
+
+  // Genuine Not Interested (exec stage/remark, not mismarked) stays NONE so it
+  // is not mis-bucketed as Intent/Stuck; stage views list these by CRM stage.
 
   const completedVisitCount = Number(goneDark.evidence.completedVisitCount ?? 0);
   const applicableInsufficient =
@@ -203,15 +244,18 @@ export function classifyLead(input: ClassifyLeadInput): ClassificationResult {
   };
 }
 
+type ProcessClassifyInput = {
+  customerId: string;
+  salesProcessId: string;
+  currentStage: CanonicalStage;
+  stageEnteredAt: string | null;
+  stageHistory?: StageHistoryEntry[] | null;
+  remark?: string | null;
+};
+
 /** Classify every process in a list against a shared call pool. */
 export function classifyAllProcesses(
-  processes: Array<{
-    customerId: string;
-    salesProcessId: string;
-    currentStage: CanonicalStage;
-    stageEnteredAt: string | null;
-    stageHistory?: StageHistoryEntry[] | null;
-  }>,
+  processes: ProcessClassifyInput[],
   calls: CallRecord[],
   config?: ClassificationConfig,
 ): ClassificationResult[] {
@@ -238,6 +282,7 @@ export function classifyAllProcesses(
       currentStage: p.currentStage,
       stageEnteredAt: p.stageEnteredAt,
       stageHistory: p.stageHistory,
+      remark: p.remark,
       calls: effective,
       config,
     });
@@ -246,13 +291,7 @@ export function classifyAllProcesses(
 
 /** Async classify with event-loop yields so sync stream heartbeats can flush. */
 export async function classifyAllProcessesAsync(
-  processes: Array<{
-    customerId: string;
-    salesProcessId: string;
-    currentStage: CanonicalStage;
-    stageEnteredAt: string | null;
-    stageHistory?: StageHistoryEntry[] | null;
-  }>,
+  processes: ProcessClassifyInput[],
   calls: CallRecord[],
   config?: ClassificationConfig,
 ): Promise<ClassificationResult[]> {
@@ -282,6 +321,7 @@ export async function classifyAllProcessesAsync(
         currentStage: p.currentStage,
         stageEnteredAt: p.stageEnteredAt,
         stageHistory: p.stageHistory,
+        remark: p.remark,
         calls: effective,
         config,
       }),
@@ -299,13 +339,7 @@ export async function classifyAllProcessesAsync(
  * at a time so peak RAM stays flat regardless of total call history size.
  */
 export async function classifyAllProcessesFromDisk(
-  processes: Array<{
-    customerId: string;
-    salesProcessId: string;
-    currentStage: CanonicalStage;
-    stageEnteredAt: string | null;
-    stageHistory?: StageHistoryEntry[] | null;
-  }>,
+  processes: ProcessClassifyInput[],
   offsets: import('../callDisk').CallOffsetIndex,
   config?: ClassificationConfig,
 ): Promise<ClassificationResult[]> {
@@ -336,6 +370,7 @@ export async function classifyAllProcessesFromDisk(
           currentStage: p.currentStage,
           stageEnteredAt: p.stageEnteredAt,
           stageHistory: p.stageHistory,
+          remark: p.remark,
           calls: effective,
           config,
         }),

@@ -378,6 +378,7 @@ async function buildSnapshotFromStore(
         currentStage: p.currentStage,
         stageEnteredAt: p.stageEnteredAt,
         stageHistory: p.stageHistory,
+        remark: p.remark,
       })),
       calls,
     );

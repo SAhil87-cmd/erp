@@ -41,7 +41,13 @@ export function ReportsView() {
     if (!snapshot) return map;
     const filtered = filterSnapshotClient(snapshot, filters);
     for (const kind of LEAD_EXPORT_KINDS) {
-      if (kind.stage) {
+      if (kind.stages?.length) {
+        const staged = filterSnapshotClient(snapshot, {
+          ...filters,
+          stages: kind.stages,
+        });
+        map.set(kind.id, buildLeadRows(staged));
+      } else if (kind.stage) {
         const staged = filterSnapshotClient(snapshot, {
           ...filters,
           stages: [kind.stage],

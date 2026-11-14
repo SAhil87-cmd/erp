@@ -76,7 +76,31 @@ export const TERMINAL_EXCLUSION_STAGES: CanonicalStage[] = [
 ];
 
 /**
+ * Executive CRM stage wins: do not push these into Intent / Stuck (or, for NI,
+ * Gone Dark). The salesperson's status is the source of truth.
+ */
+export const EXEC_OWNED_FOLLOW_STAGES: CanonicalStage[] = [
+  'Cold Followup',
+  'Cold',
+  'Followup',
+];
+
+/**
  * Categories that suppress High / Very High Intent from simultaneous counting.
  * Official order: Gone Dark overrides intent; other ops do not.
  */
 export const INTENT_OVERRIDE_CATEGORIES = ['GONE_DARK'] as const;
+
+/** Remark / notes text that means the exec closed the lead as Not Interested. */
+export function remarkIndicatesNotInterested(
+  remark: string | null | undefined,
+): boolean {
+  if (!remark) return false;
+  const t = remark.toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!t) return false;
+  if (/\bnot[\s-]*interested\b/.test(t)) return true;
+  if (/\bnot[\s-]*intrested\b/.test(t)) return true; // common misspelling
+  // Short note that is just "NI" / "N.I."
+  if (/^n\.?\s*i\.?$/.test(t)) return true;
+  return false;
+}

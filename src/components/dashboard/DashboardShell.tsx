@@ -15,6 +15,7 @@ import { ReportsView } from './ReportsView';
 import { ReviewedLeadsView } from './ReviewedLeadsView';
 import { SalesClosedView } from './SalesClosedView';
 import { Sidebar } from './Sidebar';
+import { StageLeadView } from './StageLeadView';
 import { TodaysActivityView } from './TodaysActivityView';
 import { TAB_ITEMS } from './labels';
 import { useCrmStore } from './useCrmStore';
@@ -71,6 +72,23 @@ function ActiveView() {
           category="HIGH_INTENT"
           title="High Intent"
           description="At least one verified completed site visit."
+        />
+      );
+    case 'not-interested':
+      return (
+        <StageLeadView
+          stages={['Not Interested']}
+          title="Not Interested"
+          description="Leads the sales executive marked Not Interested (including visit-done leads with an NI remark). These stay out of High Intent / Very High Intent / Stuck."
+          includeRemarkNotInterested
+        />
+      );
+    case 'cold-follow':
+      return (
+        <StageLeadView
+          stages={['Cold Followup', 'Cold', 'Followup']}
+          title="Cold Follow"
+          description="Leads the sales executive marked Cold / Followup / Cold Follow. These stay out of Stuck and Intent buckets."
         />
       );
     case 'all-leads':

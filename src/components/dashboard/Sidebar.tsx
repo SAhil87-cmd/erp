@@ -44,6 +44,15 @@ export function Sidebar() {
       'high-intent': usePre
         ? (preCat.HIGH_INTENT ?? 0)
         : (byCat.HIGH_INTENT ?? 0),
+      'not-interested': filtered.processes.filter(
+        (p) => p.currentStage === 'Not Interested',
+      ).length,
+      'cold-follow': filtered.processes.filter(
+        (p) =>
+          p.currentStage === 'Cold Followup' ||
+          p.currentStage === 'Cold' ||
+          p.currentStage === 'Followup',
+      ).length,
       'reviewed-leads': filtered.reviews?.length
         ? new Set(snapshot.reviews.map((r) => r.customerId)).size
         : snapshot.reviews.length,
