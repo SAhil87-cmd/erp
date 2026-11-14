@@ -87,6 +87,17 @@ export interface CompactCrmWire {
   reviews: CrmSnapshot['reviews'];
   overrides: CrmSnapshot['overrides'];
   dataHealth: CrmSnapshot['dataHealth'];
+  /** Per-customer call summary: times / answered / days / talk seconds / date list. */
+  callStatsByCustomer?: Record<
+    string,
+    {
+      totalCalls: number;
+      answeredCalls: number;
+      distinctDays: number;
+      totalTalkSeconds: number;
+      recentDates: string[];
+    }
+  >;
 }
 
 export function isCompactCrmWire(value: unknown): value is CompactCrmWire {
@@ -168,6 +179,19 @@ export function toCompactWire(
   delete (syncMeta as { message?: string }).message;
   delete (syncMeta as { publishedUrl?: string }).publishedUrl;
 
+  const callStatsByCustomer: NonNullable<CompactCrmWire['callStatsByCustomer']> =
+    {};
+  for (const p of snapshot.processes) {
+    if (!p.callStats || callStatsByCustomer[p.customerId]) continue;
+    callStatsByCustomer[p.customerId] = {
+      totalCalls: p.callStats.totalCalls,
+      answeredCalls: p.callStats.answeredCalls,
+      distinctDays: p.callStats.distinctDays,
+      totalTalkSeconds: p.callStats.totalTalkSeconds,
+      recentDates: p.callStats.recentDates.slice(0, 20),
+    };
+  }
+
   return {
     v: 1,
     builtAt: snapshot.builtAt,
@@ -203,6 +227,10 @@ export function toCompactWire(
       missingPhones: snapshot.dataHealth?.missingPhones ?? 0,
       issues: [],
     },
+    callStatsByCustomer:
+      Object.keys(callStatsByCustomer).length > 0
+        ? callStatsByCustomer
+        : undefined,
   };
 }
 
@@ -243,6 +271,7 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
       });
     }
 
+    const stats = wire.callStatsByCustomer?.[customerId];
     processes.push({
       salesProcessId,
       customerId,
@@ -258,6 +287,15 @@ export function fromCompactWire(wire: CompactCrmWire): CrmSnapshot {
       lastInteractionDate: lastInteractionDate || null,
       lastCallDate: lastCallDate || null,
       remark: remark || undefined,
+      callStats: stats
+        ? {
+            totalCalls: stats.totalCalls,
+            answeredCalls: stats.answeredCalls,
+            distinctDays: stats.distinctDays,
+            totalTalkSeconds: stats.totalTalkSeconds,
+            recentDates: stats.recentDates ?? [],
+          }
+        : undefined,
     });
 
     const primaryCategory = CODE_TO_CAT[catCode] ?? 'NONE';

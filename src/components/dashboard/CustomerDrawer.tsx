@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { CallRecord, IntelligenceCategory } from '@/lib/crm/types';
+import { formatTalkDuration, summarizeCallHistory } from './callStats';
 import { CATEGORY_LABELS, formatDate } from './labels';
 import { useCrmStore } from './useCrmStore';
 
@@ -106,6 +107,21 @@ export function CustomerDrawer() {
 
   const { customer, process, classification, interactions, calls, reviews, overrides } =
     data;
+  const liveCallStats = summarizeCallHistory(calls);
+  const stamped = process.callStats;
+  const callStats =
+    liveCallStats.totalCalls > 0
+      ? liveCallStats
+      : stamped
+        ? {
+            totalCalls: stamped.totalCalls,
+            answeredCalls: stamped.answeredCalls,
+            distinctDays: stamped.distinctDays,
+            totalTalkSeconds: stamped.totalTalkSeconds,
+            totalTalkMinutes: Math.round((stamped.totalTalkSeconds / 60) * 10) / 10,
+            dates: stamped.recentDates ?? [],
+          }
+        : liveCallStats;
 
   async function onReview(e: React.FormEvent) {
     e.preventDefault();
@@ -276,20 +292,70 @@ export function CustomerDrawer() {
 
           <section className="drawer-section">
             <h3>Call history</h3>
-            {calls.length === 0 ? (
+            {remoteCalls == null && calls.length === 0 && !stamped ? (
+              <p className="cell-muted">Loading call history…</p>
+            ) : callStats.totalCalls === 0 && calls.length === 0 ? (
               <p className="cell-muted">No call records for this customer</p>
             ) : (
-              <ul className="timeline">
-                {calls.slice(0, 20).map((call) => (
-                  <li key={call.callRecordId}>
-                    <strong>{call.callOutcome}</strong>
-                    <span>{formatDate(call.callAt)}</span>
-                    <em>
-                      {call.durationSeconds}s · {call.callExecutive || '—'}
-                    </em>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <dl className="kv-grid call-stats-grid">
+                  <div>
+                    <dt>Times called</dt>
+                    <dd>{callStats.totalCalls}</dd>
+                  </div>
+                  <div>
+                    <dt>Answered</dt>
+                    <dd>{callStats.answeredCalls}</dd>
+                  </div>
+                  <div>
+                    <dt>Call days</dt>
+                    <dd>{callStats.distinctDays}</dd>
+                  </div>
+                  <div>
+                    <dt>Talk time</dt>
+                    <dd>{formatTalkDuration(callStats.totalTalkSeconds)}</dd>
+                  </div>
+                </dl>
+                {callStats.dates.length > 0 ? (
+                  <p className="cell-muted call-dates-line">
+                    Dates:{' '}
+                    {callStats.dates
+                      .slice(0, 12)
+                      .map((d) => formatDate(d))
+                      .join(' · ')}
+                    {callStats.dates.length > 12
+                      ? ` · +${callStats.dates.length - 12} more`
+                      : ''}
+                  </p>
+                ) : null}
+                {calls.length > 0 ? (
+                  <ul className="timeline">
+                    {calls.slice(0, 40).map((call) => {
+                      const mins = Math.floor((call.durationSeconds || 0) / 60);
+                      const secs = (call.durationSeconds || 0) % 60;
+                      const dur =
+                        mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                      return (
+                        <li key={call.callRecordId}>
+                          <strong>
+                            {call.callOutcome ||
+                              (call.answered ? 'answered' : 'missed')}
+                          </strong>
+                          <span>{formatDate(call.callAt)}</span>
+                          <em>
+                            {dur} · {call.callExecutive || '—'}
+                          </em>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className="cell-muted">
+                    Summary loaded from sync. Per-call lines unavailable on this
+                    server instance — refresh sheet, then reopen the lead.
+                  </p>
+                )}
+              </>
             )}
           </section>
 

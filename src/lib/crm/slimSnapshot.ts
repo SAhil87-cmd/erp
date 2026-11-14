@@ -103,6 +103,8 @@ export function slimProcess(p: SalesProcess): SalesProcess {
     source: p.source,
     interactionIds: [],
     stageHistory: [],
+    remark: p.remark,
+    callStats: p.callStats,
   };
 }
 

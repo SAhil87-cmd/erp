@@ -53,6 +53,9 @@ export function Sidebar() {
           p.currentStage === 'Cold' ||
           p.currentStage === 'Followup',
       ).length,
+      'site-visit-scheduled': filtered.processes.filter(
+        (p) => p.currentStage === 'Site Visit Scheduled',
+      ).length,
       'reviewed-leads': filtered.reviews?.length
         ? new Set(snapshot.reviews.map((r) => r.customerId)).size
         : snapshot.reviews.length,

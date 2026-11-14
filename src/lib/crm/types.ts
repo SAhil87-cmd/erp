@@ -110,6 +110,15 @@ export interface SalesProcess {
   lastCallDate?: string | null;
   /** Latest sheet Notes / remark for this person (from CRM tab). */
   remark?: string;
+  /** Lightweight call history summary (times / days / talk time). */
+  callStats?: {
+    totalCalls: number;
+    answeredCalls: number;
+    distinctDays: number;
+    totalTalkSeconds: number;
+    /** Newest call calendar days first (YYYY-MM-DD). */
+    recentDates: string[];
+  };
 }
 
 export interface FollowUpActivity {

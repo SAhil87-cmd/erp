@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { formatTalkDuration } from './callStats';
 import type { LeadRow } from './selectors';
 import { CATEGORY_LABELS, formatDate } from './labels';
 import { useCrmStore } from './useCrmStore';
@@ -12,14 +13,19 @@ type SortKey =
   | 'assignedTo'
   | 'category'
   | 'lastActivityAt'
-  | 'stageEnteredAt';
+  | 'stageEnteredAt'
+  | 'callCount'
+  | 'talkSeconds';
 
 export function LeadsTable({
   rows,
   emptyMessage = 'No leads match the current filters.',
+  showCallStats = false,
 }: {
   rows: LeadRow[];
   emptyMessage?: string;
+  /** Show times called / call days / talk minutes columns. */
+  showCallStats?: boolean;
 }) {
   const setSelectedLead = useCrmStore((s) => s.setSelectedLead);
   const [search, setSearch] = useState('');
@@ -126,6 +132,21 @@ export function LeadsTable({
                       Category
                     </button>
                   </th>
+                  {showCallStats ? (
+                    <>
+                      <th>
+                        <button type="button" onClick={() => toggleSort('callCount')}>
+                          Calls
+                        </button>
+                      </th>
+                      <th>Call days</th>
+                      <th>
+                        <button type="button" onClick={() => toggleSort('talkSeconds')}>
+                          Talk time
+                        </button>
+                      </th>
+                    </>
+                  ) : null}
                   <th>Why</th>
                   <th>Remark</th>
                   <th>Next action</th>
@@ -169,6 +190,18 @@ export function LeadsTable({
                         <div className="cell-warn">INSUFFICIENT CALL DATA</div>
                       ) : null}
                     </td>
+                    {showCallStats ? (
+                      <>
+                        <td>
+                          <div className="cell-primary">{row.callCount}</div>
+                          <div className="cell-muted">
+                            {row.answeredCalls} answered
+                          </div>
+                        </td>
+                        <td>{row.callDays}</td>
+                        <td>{formatTalkDuration(row.talkSeconds)}</td>
+                      </>
+                    ) : null}
                     <td className="cell-clamp">{row.reason || '—'}</td>
                     <td className="cell-clamp" title={row.remark || undefined}>
                       {row.remark || '—'}

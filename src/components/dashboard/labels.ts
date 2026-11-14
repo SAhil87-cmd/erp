@@ -10,6 +10,7 @@ export type DashboardTab =
   | 'high-intent'
   | 'not-interested'
   | 'cold-follow'
+  | 'site-visit-scheduled'
   | 'all-leads'
   | 'reviewed-leads'
   | 'override'
@@ -30,6 +31,7 @@ export const TAB_ITEMS: { id: DashboardTab; label: string; category?: Intelligen
   { id: 'high-intent', label: 'High Intent', category: 'HIGH_INTENT' },
   { id: 'not-interested', label: 'Not Interested' },
   { id: 'cold-follow', label: 'Cold Follow' },
+  { id: 'site-visit-scheduled', label: 'Site Visit Scheduled' },
   { id: 'all-leads', label: 'All Leads' },
   { id: 'reviewed-leads', label: 'Reviewed Leads' },
   { id: 'override', label: 'Not Gone Dark / Override' },

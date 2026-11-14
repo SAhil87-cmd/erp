@@ -9,6 +9,7 @@ import path from 'path';
 import {
   forEachCallFromDisk,
   loadCallOffsetIndex,
+  loadCallsForCustomerFromDisk,
   type CallOffsetIndex,
 } from './callDisk';
 import { classifyAllProcessesAsync } from './classification/engine';
@@ -439,6 +440,51 @@ async function buildSnapshotFromStore(
     processIdsByInteractionDay,
   };
 
+  // Localhost: stamp call stats while the full call array is still in hand.
+  if (!IS_VERCEL && calls.length > 0) {
+    type Acc = {
+      totalCalls: number;
+      answeredCalls: number;
+      days: Set<string>;
+      totalTalkSeconds: number;
+    };
+    const byCustomer = new Map<string, Acc>();
+    for (const call of calls) {
+      const id = call.customerId || '';
+      if (!id) continue;
+      let acc = byCustomer.get(id);
+      if (!acc) {
+        acc = {
+          totalCalls: 0,
+          answeredCalls: 0,
+          days: new Set(),
+          totalTalkSeconds: 0,
+        };
+        byCustomer.set(id, acc);
+      }
+      acc.totalCalls += 1;
+      const day = calendarDateKey(call.callAt || call.callDate || null);
+      if (day) acc.days.add(day);
+      if (call.answered || call.callOutcome === 'answered') {
+        acc.answeredCalls += 1;
+        acc.totalTalkSeconds += Math.max(0, Number(call.durationSeconds) || 0);
+      }
+    }
+    for (const p of snapshot.processes) {
+      const acc = byCustomer.get(p.customerId);
+      if (!acc) continue;
+      p.callStats = {
+        totalCalls: acc.totalCalls,
+        answeredCalls: acc.answeredCalls,
+        distinctDays: acc.days.size,
+        totalTalkSeconds: acc.totalTalkSeconds,
+        recentDates: [...acc.days]
+          .sort((a, b) => b.localeCompare(a))
+          .slice(0, 20),
+      };
+    }
+  }
+
   if (IS_VERCEL) {
     if (opts.stageOnly) {
       // First-paint: never load the full disk-backed call history into RAM.
@@ -629,8 +675,81 @@ export async function slimSnapshotFromDiskCalls(
 export async function loadCallsForCustomer(
   customerId: string,
 ): Promise<CallRecord[]> {
+  if (IS_VERCEL) {
+    const m = memory();
+    if (m.calls.length > 0) {
+      return m.calls.filter((c) => c.customerId === customerId);
+    }
+    const offsets = await ensureCallOffsetsLoaded();
+    if (offsets.size > 0) {
+      return loadCallsForCustomerFromDisk(customerId, offsets);
+    }
+    return [];
+  }
   const calls = await loadCalls();
   return calls.filter((c) => c.customerId === customerId);
+}
+
+/**
+ * Stamp per-customer call history summaries onto processes (times / days / talk).
+ * Used so Site Visit Scheduled and the drawer show call stats without reloading
+ * the full call array into the browser.
+ */
+export async function attachCallStatsToSnapshot(
+  snapshot: CrmSnapshot,
+): Promise<CrmSnapshot> {
+  type Acc = {
+    totalCalls: number;
+    answeredCalls: number;
+    days: Set<string>;
+    totalTalkSeconds: number;
+  };
+  const byCustomer = new Map<string, Acc>();
+
+  const ingest = (call: CallRecord) => {
+    const id = call.customerId || '';
+    if (!id) return;
+    let acc = byCustomer.get(id);
+    if (!acc) {
+      acc = {
+        totalCalls: 0,
+        answeredCalls: 0,
+        days: new Set(),
+        totalTalkSeconds: 0,
+      };
+      byCustomer.set(id, acc);
+    }
+    acc.totalCalls += 1;
+    const day = calendarDateKey(call.callAt || call.callDate || null);
+    if (day) acc.days.add(day);
+    const answered = call.answered || call.callOutcome === 'answered';
+    if (answered) {
+      acc.answeredCalls += 1;
+      acc.totalTalkSeconds += Math.max(0, Number(call.durationSeconds) || 0);
+    }
+  };
+
+  if (IS_VERCEL && (memory().callCountOnDisk > 0 || memory().callOffsets)) {
+    await forEachCallFromDisk((call) => {
+      ingest(call);
+    });
+  } else {
+    const calls = await loadCalls();
+    for (const call of calls) ingest(call);
+  }
+
+  for (const p of snapshot.processes) {
+    const acc = byCustomer.get(p.customerId);
+    if (!acc) continue;
+    p.callStats = {
+      totalCalls: acc.totalCalls,
+      answeredCalls: acc.answeredCalls,
+      distinctDays: acc.days.size,
+      totalTalkSeconds: acc.totalTalkSeconds,
+      recentDates: [...acc.days].sort((a, b) => b.localeCompare(a)).slice(0, 20),
+    };
+  }
+  return snapshot;
 }
 
 export async function saveSyncMeta(meta: SyncMeta): Promise<void> {

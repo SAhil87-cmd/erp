@@ -20,6 +20,7 @@ import {
 import { slimClassification } from '@/lib/crm/slimSnapshot';
 import {
   applyOverridesToClassifications,
+  attachCallStatsToSnapshot,
   ensureCallOffsetsLoaded,
   getDiskCallCount,
   loadCalls,
@@ -492,6 +493,18 @@ export async function POST(req: NextRequest) {
                     '[api/crm/sync] remarks merge skipped',
                     remarkErr,
                   );
+                }
+
+                try {
+                  send({ ok: true, phase: 'call-stats', t: Date.now() });
+                  exactSlim = await awaitWithHeartbeats(
+                    send,
+                    'call-stats',
+                    attachCallStatsToSnapshot(exactSlim),
+                  );
+                  replaceCachedSnapshot(exactSlim);
+                } catch (statsErr) {
+                  console.warn('[api/crm/sync] call stats attach skipped', statsErr);
                 }
 
                 send({ ok: true, phase: 'packing-leads', t: Date.now() });

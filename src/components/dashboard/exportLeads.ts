@@ -17,7 +17,8 @@ export type LeadExportKind =
   | 'ALL_LEADS'
   | 'SALES_CLOSED'
   | 'NOT_INTERESTED_STAGE'
-  | 'COLD_FOLLOW_STAGE';
+  | 'COLD_FOLLOW_STAGE'
+  | 'SITE_VISIT_SCHEDULED_STAGE';
 
 export const LEAD_EXPORT_KINDS: Array<{
   id: LeadExportKind;
@@ -45,6 +46,11 @@ export const LEAD_EXPORT_KINDS: Array<{
     id: 'COLD_FOLLOW_STAGE',
     label: 'Cold Follow',
     stages: ['Cold Followup', 'Cold', 'Followup'],
+  },
+  {
+    id: 'SITE_VISIT_SCHEDULED_STAGE',
+    label: 'Site Visit Scheduled',
+    stage: 'Site Visit Scheduled',
   },
   {
     id: 'ALL_LEADS',

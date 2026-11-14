@@ -26,6 +26,11 @@ export interface LeadRow {
   stageEnteredAt: string | null;
   /** Newest of last interaction / last call / stage entry — used for latest-first lists. */
   lastActivityAt: string | null;
+  /** Call history summary when shipped with the snapshot. */
+  callCount: number;
+  answeredCalls: number;
+  callDays: number;
+  talkSeconds: number;
   customer: Customer;
   process: SalesProcess;
   classification: ClassificationResult;
@@ -118,6 +123,10 @@ export function buildLeadRows(
       remark: process.remark?.trim() || '',
       stageEnteredAt: process.stageEnteredAt,
       lastActivityAt: latestActivityAt(process),
+      callCount: process.callStats?.totalCalls ?? 0,
+      answeredCalls: process.callStats?.answeredCalls ?? 0,
+      callDays: process.callStats?.distinctDays ?? 0,
+      talkSeconds: process.callStats?.totalTalkSeconds ?? 0,
       customer,
       process,
       classification,

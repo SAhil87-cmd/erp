@@ -15,11 +15,13 @@ export function StageLeadView({
   description,
   /** Also include leads whose Notes/remark say Not Interested. */
   includeRemarkNotInterested,
+  showCallStats,
 }: {
   stages: CanonicalStage[];
   title: string;
   description: string;
   includeRemarkNotInterested?: boolean;
+  showCallStats?: boolean;
 }) {
   const snapshot = useCrmStore((s) => s.snapshot);
   const filters = useCrmStore((s) => s.filters);
@@ -59,6 +61,7 @@ export function StageLeadView({
         <LeadsTable
           rows={rows}
           emptyMessage={`No ${title} leads in the current filter set.`}
+          showCallStats={showCallStats}
         />
       </section>
     </div>

@@ -91,6 +91,15 @@ function ActiveView() {
           description="Leads the sales executive marked Cold / Followup / Cold Follow. These stay out of Stuck and Intent buckets."
         />
       );
+    case 'site-visit-scheduled':
+      return (
+        <StageLeadView
+          stages={['Site Visit Scheduled']}
+          title="Site Visit Scheduled"
+          description="Customers planning a site visit. Table shows call count, call days, and talk time — open a lead for full dated call history."
+          showCallStats
+        />
+      );
     case 'all-leads':
       return <AllLeadsView />;
     case 'reviewed-leads':
