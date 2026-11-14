@@ -1,38 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  /* Bright brand palette */
+  /* Color theme: #1D59BB #76B9FF #FEF3B3 #FEBD19 */
   --brand-white: #ffffff;
-  --brand-gray: #e5e5e5;
-  --brand-orange: #fca311;
-  --brand-orange-deep: #e8910a;
-  --brand-navy: #14213d;
-  --brand-black: #000000;
-  --brand-mark: #6b7280;
+  --brand-blue: #1d59bb;
+  --brand-blue-deep: #164792;
+  --brand-sky: #76b9ff;
+  --brand-cream: #fef3b3;
+  --brand-yellow: #febd19;
+  --brand-yellow-deep: #e5a80f;
+  --brand-black: #1a1a1a;
+  --brand-mark: #5b6578;
 
   /* ERP shell */
-  --sidebar: #14213d;
-  --sidebar-elevated: #1b2c4d;
-  --sidebar-hover: #1c3054;
-  --sidebar-active: #243b66;
+  --sidebar: #1d59bb;
+  --sidebar-elevated: #2463c9;
+  --sidebar-hover: #2a6ad0;
+  --sidebar-active: #164792;
   --sidebar-text: #ffffff;
-  --sidebar-muted: #c5cddb;
-  --sidebar-section: #9aa6bc;
+  --sidebar-muted: #d7e8ff;
+  --sidebar-section: #b7d6ff;
 
-  --bg: #e5e5e5;
+  --bg: #fff8d6;
   --surface: #ffffff;
-  --surface-muted: #f4f4f4;
-  --ink: #000000;
-  --ink-muted: #5c6575;
-  --line: #d6d6d6;
-  --line-strong: #c0c0c0;
+  --surface-muted: #fef3b3;
+  --ink: #1a1a1a;
+  --ink-muted: #5b6578;
+  --line: #eadfa0;
+  --line-strong: #d9cc7e;
 
-  --blue: var(--brand-orange);
+  --blue: var(--brand-blue);
   --teal: #0f9a8a;
   --urgent: #dc2626;
-  --warning: #fca311;
+  --warning: var(--brand-yellow);
   --opportunity: #1a7a3c;
-  --shadow: 0 1px 2px rgba(20, 33, 61, 0.06), 0 6px 18px rgba(20, 33, 61, 0.06);
+  --shadow: 0 1px 2px rgba(29, 89, 187, 0.08), 0 6px 18px rgba(29, 89, 187, 0.08);
   --font-body: var(--font-body);
   --radius: 8px;
   --radius-sm: 6px;
@@ -100,7 +102,7 @@ button {
   flex-direction: column;
   gap: 0.45rem;
   padding: 0.95rem 1rem 0.8rem;
-  border-bottom: 3px solid var(--brand-orange);
+  border-bottom: 3px solid var(--brand-yellow);
   background: var(--brand-white);
 }
 
@@ -114,7 +116,7 @@ button {
 
 .sidebar-product {
   margin: 0;
-  color: var(--brand-navy);
+  color: var(--brand-blue);
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -181,23 +183,23 @@ button {
 .sidebar-link.active {
   background: var(--sidebar-active);
   color: #fff;
-  box-shadow: inset 3px 0 0 var(--brand-orange);
+  box-shadow: inset 3px 0 0 var(--brand-yellow);
 }
 
 .sidebar-link.active em {
-  background: rgba(252, 163, 17, 0.22);
+  background: rgba(254, 189, 25, 0.22);
   color: #ffe2a8;
 }
 
 .sidebar-footer {
   padding: 0.85rem 1rem 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--sidebar-muted);
   font-size: 0.68rem;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-  background: #0f1a30;
+  background: var(--brand-blue-deep);
 }
 
 .dash-main {
@@ -205,7 +207,7 @@ button {
   display: flex;
   flex-direction: column;
   background:
-    linear-gradient(180deg, rgba(252, 163, 17, 0.08) 0%, transparent 160px),
+    linear-gradient(180deg, rgba(118, 185, 255, 0.28) 0%, transparent 180px),
     var(--bg);
 }
 
@@ -237,7 +239,7 @@ button {
   font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: var(--brand-navy);
+  color: var(--brand-blue);
 }
 
 .topbar-meta {
@@ -272,12 +274,12 @@ button {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 50%;
-  background: var(--brand-orange);
+  background: var(--brand-yellow);
   flex-shrink: 0;
 }
 
 .topbar-loading {
-  color: var(--brand-navy);
+  color: var(--brand-blue);
   font-weight: 600;
 }
 
@@ -333,8 +335,8 @@ button {
 
 .dash-input:focus {
   outline: none;
-  border-color: var(--brand-orange);
-  box-shadow: 0 0 0 3px rgba(252, 163, 17, 0.25);
+  border-color: var(--brand-yellow);
+  box-shadow: 0 0 0 3px rgba(254, 189, 25, 0.25);
 }
 
 .btn-primary,
@@ -349,22 +351,22 @@ button {
 }
 
 .btn-primary {
-  background: var(--brand-orange);
+  background: var(--brand-yellow);
   color: var(--brand-black);
 }
 
 .btn-primary:hover {
-  background: var(--brand-orange-deep);
+  background: var(--brand-yellow-deep);
 }
 
 .btn-secondary {
-  background: var(--brand-navy);
+  background: var(--brand-blue);
   color: #fff;
-  border-color: var(--brand-navy);
+  border-color: var(--brand-blue);
 }
 
 .btn-secondary:hover {
-  background: #1c3054;
+  background: var(--brand-blue-deep);
 }
 
 .btn-ghost {
@@ -376,7 +378,7 @@ button {
 .btn-ghost:hover {
   background: var(--surface-muted);
   color: var(--ink);
-  border-color: var(--brand-orange);
+  border-color: var(--brand-yellow);
 }
 
 .btn-primary:disabled,
@@ -457,20 +459,20 @@ button {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: var(--brand-orange);
+  background: var(--brand-yellow);
 }
 
 .metric-card.tone-urgent::before {
   background: var(--urgent);
 }
 .metric-card.tone-warning::before {
-  background: var(--brand-orange);
+  background: var(--brand-yellow);
 }
 .metric-card.tone-opportunity::before {
   background: var(--opportunity);
 }
 .metric-card.tone-neutral::before {
-  background: var(--brand-navy);
+  background: var(--brand-blue);
 }
 
 .metric-label {
@@ -620,7 +622,7 @@ button {
 }
 
 .leads-table tbody tr:hover {
-  background: rgba(252, 163, 17, 0.12);
+  background: rgba(254, 189, 25, 0.12);
 }
 
 .cell-primary {
@@ -663,8 +665,8 @@ button {
   padding: 0.12rem 0.45rem;
   font-size: 0.68rem;
   font-weight: 600;
-  background: rgba(252, 163, 17, 0.18);
-  color: #8a5a00;
+  background: rgba(118, 185, 255, 0.28);
+  color: var(--brand-blue-deep);
   letter-spacing: 0.01em;
 }
 
@@ -680,8 +682,8 @@ button {
 }
 .tone-very_high_intent,
 .tone-high_intent {
-  background: rgba(252, 163, 17, 0.2);
-  color: #8a5a00;
+  background: rgba(254, 189, 25, 0.2);
+  color: #8a6500;
 }
 .tone-none {
   background: #f3f4f6;
@@ -690,8 +692,8 @@ button {
 
 .tier-hot,
 .tier-warm {
-  background: rgba(252, 163, 17, 0.2);
-  color: #8a5a00;
+  background: rgba(254, 189, 25, 0.2);
+  color: #8a6500;
 }
 .tier-cool {
   background: #fffbeb;
@@ -748,7 +750,7 @@ button {
   gap: 1rem;
   padding: 1rem 1.1rem;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(90deg, rgba(252, 163, 17, 0.16), transparent);
+  background: linear-gradient(90deg, rgba(254, 189, 25, 0.16), transparent);
 }
 
 .drawer-header h2 {
@@ -823,7 +825,7 @@ button {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-muted);
-  border-left: 3px solid var(--brand-orange);
+  border-left: 3px solid var(--brand-yellow);
 }
 
 .timeline strong {
@@ -863,7 +865,7 @@ button {
 
 .drawer-msg {
   margin: 0;
-  color: var(--brand-navy);
+  color: var(--brand-blue);
   font-size: 0.82rem;
   font-weight: 600;
 }
@@ -908,8 +910,8 @@ button {
 
 .followup-col button:hover,
 .linkish:hover {
-  border-color: rgba(252, 163, 17, 0.55);
-  background: rgba(252, 163, 17, 0.1);
+  border-color: rgba(254, 189, 25, 0.55);
+  background: rgba(254, 189, 25, 0.1);
 }
 
 .report-grid {
